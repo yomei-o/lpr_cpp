@@ -3,7 +3,7 @@
 # ../yolox/plate_yolox_tiny.onnx into MEMFS.
 set -e
 cd "$(dirname "$0")"
-emcc -O3 -std=c++20 -DNDEBUG \
+emcc -O3 -std=c++20 -DNDEBUG -msimd128 \
   -I../yolox/pure -I../yolox/pure/third_party \
   yolox_wasm.cpp \
   -sEXPORTED_FUNCTIONS=_fn_detect,_fn_boxes,_fn_ready,_malloc,_free \
