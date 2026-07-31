@@ -32,3 +32,8 @@ __pycache__/
 *.pth
 !weights/
 !weights/**
+
+# plate detector model + parity refs (needed for the demo)
+!plate_yolox_tiny.onnx
+!ref_plate/
+!ref_plate/*.bin
