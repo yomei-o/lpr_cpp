@@ -37,3 +37,7 @@ __pycache__/
 !plate_yolox_tiny.onnx
 !ref_plate/
 !ref_plate/*.bin
+
+# 8-class detector init (COCO backbone + fresh 8-class head) — ship so training needs no torch
+!pure/ref/data_unf_plate/
+!pure/ref/data_unf_plate/**
