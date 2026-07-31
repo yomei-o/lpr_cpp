@@ -30,26 +30,34 @@ inline DLProv dlpr_build(const std::string& dir) {
   return p;
 }
 
-inline DT dl_cbr(DT x, DLProv& p) {                       // Conv -> ReLU -> BN(eval)
+inline DT dl_cbr(DT x, DLProv& p, bool tr) {               // Conv -> ReLU -> BN (train=batch stats / eval=running)
   auto& C = p.next(); DT y = dconv2d(x, C.w, C.b, C.sh, C.ph, C.grp);
   y = drelu(y); auto& N = p.next();
-  return dbn_eval(y, N.gamma, N.beta, N.rm, N.rv, p.eps);
+  return tr ? dbn(y, N.gamma, N.beta, p.eps, N.rm, N.rv, 0.1f) : dbn_eval(y, N.gamma, N.beta, N.rm, N.rv, p.eps);
 }
-inline DT dl_branch(DT x, DLProv& p, int nblocks) {
-  x = dadd(x, dl_cbr(x, p));                               // block0
-  for (int i = 0; i < nblocks; ++i) { DT h = dl_cbr(x, p); x = dadd(h, dl_cbr(h, p)); }
-  x = dl_cbr(x, p);                                        // final 1x1
-  return dgap(x);                                          // (N,128)
+inline DT dl_branch(DT x, DLProv& p, int nblocks, bool tr) {
+  x = dadd(x, dl_cbr(x, p, tr));                            // block0
+  for (int i = 0; i < nblocks; ++i) { DT h = dl_cbr(x, p, tr); x = dadd(h, dl_cbr(h, p, tr)); }
+  x = dl_cbr(x, p, tr);                                     // final 1x1
+  return dgap(x);                                           // (N,128)
 }
 inline DT dl_head(DT feat, DLProv& p) { auto& H = p.next(); return dadd_rowvec(dmatmul(feat, H.w), H.b); }  // logits
 
-// full eval forward -> 9 device logit tensors (region, class_num_01/02/03, hiragana, plate_num_01..04)
-inline std::vector<DT> dlpr_forward(DT x, DLProv& p) {
+// full forward -> 9 device logit tensors (region, class_num_01/02/03, hiragana, plate_num_01..04)
+inline std::vector<DT> dlpr_forward(DT x, DLProv& p, bool tr = false) {
   p.i = 0;
-  DT s = dl_cbr(x, p);
-  DT fa = dl_branch(s, p, 6); std::vector<DT> o;
+  DT s = dl_cbr(x, p, tr);
+  DT fa = dl_branch(s, p, 6, tr); std::vector<DT> o;
   for (int i = 0; i < 4; ++i) o.push_back(dl_head(fa, p));
-  DT fb = dl_branch(s, p, 5);
+  DT fb = dl_branch(s, p, 5, tr);
   for (int i = 0; i < 5; ++i) o.push_back(dl_head(fb, p));
   return o;
+}
+
+// trainable device params (conv w/b, BN affine, head w/b) for DAdam.
+inline std::vector<DT> dlpr_params(DLProv& p) {
+  std::vector<DT> ps;
+  for (auto& L : p.L) { if (L.w) ps.push_back(L.w); if (L.b) ps.push_back(L.b);
+    if (L.gamma) ps.push_back(L.gamma); if (L.beta) ps.push_back(L.beta); }
+  return ps;
 }
