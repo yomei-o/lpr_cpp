@@ -1,0 +1,8 @@
+car
+small-truck
+truck
+bus
+motorbike
+bicycle
+person
+plate
