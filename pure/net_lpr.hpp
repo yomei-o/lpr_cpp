@@ -71,6 +71,19 @@ inline LprOut lpr_forward(Tensor x, LProv& p, bool tr, bool sm = true) {
   return o;
 }
 
+// save weights in manifest/forward order (conv w[,b] | bn gamma/beta/rm/rv | head w,b), so the
+// checkpoint reloads with the same manifest.txt (copy it alongside as weights.bin for inference/WASM).
+inline void save_lpr(LProv& p, const std::string& path) {
+  std::ofstream f(path, std::ios::binary);
+  auto wt = [&](const Tensor& t) { f.write((const char*)t->data.data(), t->data.size() * 4); };
+  auto wr = [&](const std::vector<float>& v) { f.write((const char*)v.data(), v.size() * 4); };
+  for (auto& L : p.L) {
+    if (L.kind == 0) { wt(L.w); if (L.b) wt(L.b); }
+    else if (L.kind == 1) { wt(L.gamma); wt(L.beta); wr(L.rm); wr(L.rv); }
+    else { wt(L.w); wt(L.b); }
+  }
+}
+
 // trainable parameters (conv w/b, BN affine, head w/b) for the optimizer.
 inline std::vector<Tensor> lpr_params(LProv& p) {
   std::vector<Tensor> ps;

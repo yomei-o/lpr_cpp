@@ -41,10 +41,21 @@ plate samples (random 9-head labels + a label-encoding image): overfitting a sma
 **56.7 → 6.9** and per-head accuracy **5.6% → 80.6%**, confirming forward + 9-head-CE + backward + optimizer.
 ```sh
 cl /std:c++20 /O2 /EHsc /Zc:preprocessor /DNOMINMAX /Ipure\third_party pure\train_lpr.cpp
-train_lpr 50 8 4 3e-4 pure/ref/      # steps samples batch lr
+train_lpr 50 8 3e-4                                  # synthetic: steps batch lr
+train_lpr 2000 16 3e-4 --data mydata --save ckpt.bin # REAL folder dataset -> checkpoint
 ```
-For production, swap the synthetic generator for a folder dataset loader (image + 9 labels per plate)
-— real JP-plate data is private, so this repo ships the loop, not the data.
+
+### Real-data training (`lpr_data.hpp`)
+Point `--data <dir>` at a folder with plate crops + a `labels.txt` (one line per image):
+```
+<filename> <region> <class_num_01> <class_num_02> <class_num_03> <hiragana> <plate_num_01..04>
+plate0001.jpg  51 5 0 0 9 1 2 3 4        # indices (0-based) into each head's class list
+```
+Images are bilinear-resized to 128×128, RGB, /255 (matching `Classificator/lpr/lpr.py`). To make
+`labels.txt` from human annotations (`filename ⟶ 品川 ⟶ 500 ⟶ あ ⟶ 1234`, tab-separated), use
+`pure/ref/make_labels.py`. Training saves a checkpoint (`--save`); copy `pure/ref/manifest.txt` next
+to it and it reloads for inference / the WASM demo. Real JP-plate data is private, so this repo ships
+the loader + loop, not the data.
 
 ## Roadmap
 1. ✅ extract the 2-branch depthwise-separable ResNet arch from the ONNX + forward parity (3.3e-05)
