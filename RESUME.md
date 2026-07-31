@@ -21,13 +21,15 @@ nvcc compiles), classifier training loop + real-data loader, detector training l
    annotations). Then copy `pure/ref/manifest.txt` next to the ckpt and rename to `weights.bin` for
    inference / the WASM demo.
 
-## ⏭ Speed / polish
-6. **Eigen** CPU speedup for the classifier training (`-DUSE_EIGEN -Ipure/third_party/eigen_flat`,
-   conv/matmul already route through the `bk::` seam) — classifier train is ~15 s/step on plain CPU.
-7. **Device training** for the classifier (only device *eval* forward exists via `dnet_lpr`; add a
-   device train path like facenet's dtrain if GPU training is wanted).
-8. **Detector WASM speed** — plate detect is ~3.3 s/frame (SIMD). Options: run at a smaller input,
-   or a lighter model; currently button-press, not live.
+## ✅ Speed / polish (DONE 2026-08-01)
+6. ✅ **Eigen** CPU speedup — `-DUSE_EIGEN -Ipure/third_party/eigen_flat -arch:AVX2` → ~2× faster
+   classifier training (40.7s → 20.0s / 6 steps), parity kept (3.28e-05).
+7. ✅ **Device training** for the classifier — `dtrain_lpr.cpp` (device fwd train-mode + host-bridged
+   9-head CE + DAdam). CPU-thrust runs; nvcc -DUSE_CUDA compiles (sm_75). GPU run → colab notebook.
+8. ✅ **Detector WASM** — `-msimd128` → 7.8s → 3.3s/frame (button-press).
+9. ✅ **Python-free** — shipped `yolox/pure/ref/data_unf_plate/` (8-class detector init) + classifier
+   `weights.bin` + plate onnx, so train/infer/WASM need no Python (only one-time extraction scripts do).
+10. ✅ **`lpr_infer`** — pure-C++ classifier inference on a real crop (image → 品川 371 ら 100), `/utf-8`.
 
 ## Notes / gotchas
 - **Two engines**: `pure/` (LPR, facenet-derived, has dtensor GPU) and `yolox/` (detector, own engine)
