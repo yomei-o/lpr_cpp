@@ -3,7 +3,7 @@
 # baked in — the page fetches pure/ref/{manifest.txt,weights.bin} and writes them into MEMFS.
 set -e
 cd "$(dirname "$0")"
-emcc -O3 -std=c++20 -DNDEBUG \
+emcc -O3 -std=c++20 -DNDEBUG -msimd128 \
   -I../pure -I../pure/third_party \
   lpr_wasm.cpp \
   -sEXPORTED_FUNCTIONS=_fn_recognize,_fn_recognize_chw,_fn_ready,_malloc,_free \
