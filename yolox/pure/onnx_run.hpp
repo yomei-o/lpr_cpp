@@ -6,6 +6,7 @@
 #include "autograd.hpp"
 #include "ops2d.hpp"        // mul (elementwise)
 #include <map>
+#include <set>
 #include <string>
 
 namespace onx {
@@ -17,9 +18,14 @@ inline int64_t attr_i0(const Node& n, const std::string& name, int64_t def) {
   const Attr* a = find_attr(n, name);
   if (!a) return def; return a->ints.empty() ? a->i : a->ints[0];
 }
+inline Tensor onnx_relu(const Tensor& a) {                 // ReLU-activated nets (e.g. the plate yolox)
+  Tensor o = from_data(a->shape, a->data); for (auto& v : o->data) if (v < 0) v = 0; return o;
+}
 
-// Run the graph on input x; returns name -> Tensor for every produced value.
-inline std::map<std::string, Tensor> run_onnx(const Graph& g, const Tensor& x) {
+// Run the graph on input x; returns name -> Tensor for every produced value. If `stop` is non-empty,
+// execution halts once all named tensors have been produced (skips a decode tail the 4D engine can't
+// express — grab the per-level head outputs and decode with infer_yolox instead).
+inline std::map<std::string, Tensor> run_onnx(const Graph& g, const Tensor& x, const std::set<std::string>& stop = {}) {
   std::map<std::string, Tensor> vals;
   std::map<std::string, const IntsTensor*> imap;
   for (const auto& t : g.init_f) vals[t.name] = from_data(t.dims, t.data);
@@ -42,6 +48,8 @@ inline std::map<std::string, Tensor> run_onnx(const Graph& g, const Tensor& x) {
       int64_t stride = attr_i0(nd, "strides", 1), pad = attr_i0(nd, "pads", 0), grp = attr_i0(nd, "group", 1);
       y = (grp > 1) ? dwconv2d(get(nd.input[0]), w, b, stride, pad)
                     : conv2d(get(nd.input[0]), w, b, stride, pad);
+    } else if (op == "Relu") {
+      y = onnx_relu(get(nd.input[0]));
     } else if (op == "Sigmoid") {
       y = sigmoid(get(nd.input[0]));
     } else if (op == "Mul") {
@@ -75,9 +83,12 @@ inline std::map<std::string, Tensor> run_onnx(const Graph& g, const Tensor& x) {
     } else if (op == "Identity") {
       y = get(nd.input[0]);
     } else {
+      if (!stop.empty()) continue;                         // tolerate a decode tail we stop before
       printf("unsupported ONNX op: %s\n", op.c_str()); std::exit(1);
     }
     vals[nd.output[0]] = y;
+    if (!stop.empty()) { bool all = true; for (auto& s : stop) if (!vals.count(s)) { all = false; break; }
+      if (all) break; }
   }
   return vals;
 }

@@ -10,3 +10,6 @@ __pycache__/
 /*.png
 out/
 scratch/
+
+# plate detector model (needed for the demo)
+!yolox/plate_yolox_tiny.onnx
