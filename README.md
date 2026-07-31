@@ -11,6 +11,8 @@ ResNet, 128 ch, that takes a 128×128 plate crop and emits **9 softmax heads** v
 Full spec: [pure/ref/ARCH.md](pure/ref/ARCH.md).
 
 ## Browser demo (WebAssembly) — recognize a plate from your webcam
+**▶ Live demo: https://yomei-o.github.io/lpr_cpp/wasm/** (GitHub Pages, HTTPS → camera works)
+
 `wasm/` is a client-side app: aim the camera at a plate, fit it in the guide box, and it shows the
 decoded **地域名・分類番号・ひらがな・一連番号**. The pure-C++ classifier compiled to WASM; the tracked
 `pure/ref/weights.bin` (1.3 MB) is fetched at runtime — no server, no upload, no Emscripten needed:
