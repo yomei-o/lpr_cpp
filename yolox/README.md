@@ -1,0 +1,168 @@
+# yolox_cpp
+
+Training **YOLOX** (Megvii) in C++ with the same from-scratch, dependency-free autograd
+engine used in [yolov8_cpp](https://github.com/yomei-o/yolov8_cpp) /
+[yolov5_cpp](https://github.com/yomei-o/yolov5_cpp) /
+[yolov11_cpp](https://github.com/yomei-o/yolov11_cpp). CPU/OpenMP with `g++`, real CUDA
+with `nvcc -DUSE_CUDA` (single-header `pure/backend.hpp` seam).
+
+YOLOX is the most different of the family: **anchor-free with a decoupled head** and
+**SimOTA** dynamic label assignment (no anchors, no DFL/TAL). See
+[`pure/NOTES_yolox.md`](pure/NOTES_yolox.md) for the full architecture blueprint.
+
+## Status
+- ✅ M0: oracle (`torch.hub` yolox-tiny) + architecture blueprint + **Focus op** (space-to-depth), gradient-checked.
+- ✅ M1: full forward parity vs PyTorch (`net_yolox.hpp` + `export_yolox.py`) — L0 1.8e-4 / L1 4e-5 / L2 1.9e-5.
+- ✅ M2: loss — **SimOTA** (plain, no-grad) == YOLOX `get_assignments`; IoU/BCE forward 1.9e-6, **grads 3e-8** vs PyTorch.
+- ✅ M3: **end-to-end training** (`m3_train.cpp`, forward→SimOTA→loss→backward→SGD) — loss 24.1→3.2.
+
+- ✅ **.pt write-back**: train unfused conv+BN in C++ → drop into a standard YOLOX `.pt`
+  (re-loads with 0 missing/unexpected keys, runs). `net_yolox_unfused.hpp` + `ref/writeback_yolox.py`.
+- ✅ **ONNX export/import**: `onnx_export_yolox.cpp` writes `yolox_tiny.onnx` (Focus = strided
+  Slice + Concat) — onnxruntime-verified (~9e-5); `m_onnx_run.cpp` runs a `.onnx` graph-driven
+  in the pure engine (~1.8e-4). Hand-rolled protobuf, no deps.
+
+- ✅ **inference**: anchor-free decode + class-aware NMS (`pure/infer_yolox.hpp`);
+  `pure/m_demo.cpp` runs on a real image straight from a checkout (shipped
+  `weights/yolox_tiny/`) — `bus.jpg` → bus + 3-4 people. `pure/m_synth.cpp` is an
+  end-to-end test (train a few dozen 128×128 synthetic images → detect).
+- ✅ **all sizes** t/n/s/m/l/x (nano = depthwise) across forward / training / .pt / ONNX.
+
+conv routes through the single-header `bk::` device seam, so `nvcc -DUSE_CUDA` trains and
+runs on a real GPU. **Colab GPU check: [colab/gpu_check.ipynb](colab/gpu_check.ipynb)**
+(https://colab.research.google.com/github/yomei-o/yolox_cpp/blob/main/colab/gpu_check.ipynb).
+
+## Run the demo
+```sh
+g++ -std=c++20 -O2 -fopenmp -Ipure/third_party pure/m_demo.cpp -o m_demo   # or nvcc -DUSE_CUDA
+./m_demo assets/bus.jpg out.png 640
+```
+
+| `assets/bus.jpg` → | `assets/zidane.jpg` → |
+|---|---|
+| ![bus](assets/bus_detected.png) | ![zidane](assets/zidane_detected.png) |
+
+```
+assets/bus.jpg  810x1080          assets/zidane.jpg  1280x720
+  bus     conf=0.94                 person  conf=0.87
+  person  conf=0.87                 person  conf=0.84
+  person  conf=0.86                 tie     conf=0.75
+  person  conf=0.83                 tie     conf=0.48
+```
+(YOLOX-tiny, shipped `weights/yolox_tiny/`; decode + NMS in `pure/infer_yolox.hpp`.)
+
+## Train with zero Python — the full loop in C++
+
+`pure/train_cli.cpp` is a real training environment, pure C++, **no Python at run time**:
+dataset scan → shuffled mini-batches (hflip + brightness augmentation) over epochs →
+per-image **SimOTA** → YOLOX loss → Adam (warmup + cosine LR + weight decay) →
+**per-epoch validation mAP@0.5** → save `best.pt` / `last.pt` via the pure-C++ `.pt` writer.
+
+```sh
+cl /std:c++20 /O2 /EHsc /Ipure\third_party pure\make_init_pt.cpp   # or g++ ...
+cl /std:c++20 /O2 /EHsc /Ipure\third_party pure\train_cli.cpp
+
+./make_init_pt init.pt from yolox_tiny.pth     # C++ builds the initial-weights .pt (see below)
+./train_cli pure/ref/data_synth/list.txt pure/ref/data_synth/val.txt 16 4 init.pt
+#   epoch  1/16  loss 7.14  val mAP@0.5 0.000
+#   epoch 13/16  loss 1.53  val mAP@0.5 1.000   -> best.pt / last.pt (pure C++)
+```
+
+The C++-trained `best.pt` loads straight back into the YOLOX reference model
+(`model.load_state_dict(torch.load('best.pt'))`, 0 unexpected keys) and detects the right
+classes. Checkpoint keys are paired by **name** via `names.txt` (the engine's CSP emit
+order differs from the module `state_dict` order).
+
+### Make the initial-weights `.pt` in C++ — no Python, no YOLOX repo
+
+`pure/make_init_pt.cpp` writes a valid `state_dict` `.pt` entirely in C++, driven only by
+two tiny text files that ship in the repo — `pure/ref/data_unf/manifest_unfused.txt`
+(per-layer shapes) and `names.txt` (state_dict keys). No Python, no libtorch, **and none of
+the Megvii YOLOX package / `loguru` / `tabulate` / `thop`** that the Python export path pulls in:
+
+- **`rand`** — He/Kaiming random init, fully self-contained (no pretrained file, no Python).
+  Loads into YOLOX-tiny (0 unexpected). Trains mechanically, but from-scratch convergence
+  needs real data volume + many epochs.
+- **`from <yolox_tiny.pth>`** — copies pretrained values read in C++ by `ptio`. It handles a
+  plain state_dict, a raw `{'model': nn.Module}` checkpoint, **and the Megvii layout
+  `{'model': OrderedDict[str→Tensor], ...}`** (`load_pt_state_under`). The only input is the
+  `.pth` file itself (just download it). Verified to reproduce the fine-tune run exactly
+  (val mAP@0.5 → 1.000 by epoch 13).
+
+**All sizes.** The generator is size-agnostic — it just reads the arch files. Every size's
+`manifest_unfused.txt` + `names.txt` ship under `pure/ref/arch/<model>/` (nano/tiny/s/m/l/x),
+so `./make_init_pt out.pt rand x pure/ref/arch/yolox_m/` builds an init `.pt` for any size
+with zero Python. Each verified to load into its model (0 missing / 0 unexpected keys).
+Regenerate them with `python pure/ref/export_arch_all.py` — built from the YOLOX **exp
+system in code** (random init), so no checkpoint download and no `.pth` are needed.
+
+`train_cli` starts from that init `.pt` (`load_unfused_pt` in `pure/net_yolox_unfused.hpp`,
+arch from the manifest, tensors looked up by `names.txt` key) when it's given and present,
+else from the `.bin` export. So a fresh clone bootstraps and trains with **zero Python**:
+`make_init_pt` → `init.pt` → `train_cli`. (`python pure/ref/make_synth.py 96 24` is the one
+Python touch, only to fabricate the demo images.)
+
+**Standard datasets + augmentation.** Training reads a **standard Ultralytics/YOLO dataset**
+(scan `images/`↔`labels/`, normalised `cls xc yc w h` labels, arbitrary-size images
+letterboxed). Augmentation (`pure/dataset.hpp` `AugCfg`) is **mosaic + mixup + random-affine
+(rotate/scale/shear/translate) + HSV + flip**, with **close-mosaic** (disabled for the last
+N epochs).
+
+**Unified CLI + `data.yaml`.** `pure/yolo.cpp` is a single `yolo` command reading a standard
+`data.yaml` (`path`/`train`/`val`/`nc`/`names`):
+```sh
+python pure/ref/make_synth_yolo.py 40                          # standard images/ + labels/ layout
+cl /std:c++20 /O2 /EHsc /Ipure\third_party pure\yolo.cpp        # or g++ ...
+./yolo train  --data data.yaml --weights init.pt --imgsz 640 --epochs 100 --batch 8 \
+              --mosaic 1 --mixup 1 --close-mosaic 10
+./yolo val    --data data.yaml --weights best.pt --imgsz 640   # -> mAP@0.5 and mAP@0.5:0.95
+./yolo detect --weights best.pt --source img.jpg --out out.png --data data.yaml
+```
+YOLOX forward/SimOTA/loss are per-image, so a mini-batch sums per-image loss into one graph.
+`yolo export` currently points at the standalone ONNX exporter.
+
+**Remaining work** (real-dataset convergence parity, custom `nc`, in-CLI export, EMA/resume,
+batched per-image forward, Apple-Silicon BLAS) is tracked in **[RESUME.md](RESUME.md)**.
+
+## Device-resident GPU track (`pure/dtensor.hpp`, `pure/dnet_yolox.hpp`)
+
+A second engine keeps tensors **device-resident** (`thrust::device_vector`) so there are no
+per-op host↔device copies; the **same source builds CPU or GPU** via Thrust's switchable device
+system (optional cuBLAS with `-DUSE_CUBLAS`). `dnet_yolox.hpp` is a size-agnostic device YOLOX
+(Focus / CSP / SPP / PAFPN / decoupled head; depthwise grouped conv for nano) — any of
+nano/tiny/s/m/l/x. Device fwd/bwd/Adam + the trusted host **SimOTA** loss bridged in per image.
+```sh
+# GPU:  nvcc -x cu -O2 -std=c++17 --extended-lambda -arch=native -DUSE_CUDA -DUSE_CUBLAS \
+#            -Ipure/third_party pure/dtrain_coco_yolox.cpp -lcublas -o dtrain_coco_yolox
+./dtrain_coco_yolox <images_dir> <imgsz> <batch> <epochs> [model=yolox_tiny]   # saves last.pt/best.pt
+```
+Verified on a Colab T4: the full forward matches the CPU engine (~2e-4) and real COCO128 training
+runs device-resident. Needs CUDA's CCCL (Thrust) headers; the plain `pure/` engine needs none.
+
+**Ready-to-run Colab notebooks**:
+- [Train COCO128 → detect → show image](https://colab.research.google.com/github/yomei-o/yolox_cpp/blob/main/colab/train_detect_coco320.ipynb)
+- [cuDNN backend — parity + speed](https://colab.research.google.com/github/yomei-o/yolox_cpp/blob/main/colab/dnet_cudnn_test.ipynb)
+
+### Compute backends — one source, five builds
+
+The GEMM/conv is chosen **at compile time** by flags — same code. Two engines: the **scratch**
+engine (`autograd.hpp`, `train_cli`/`yolo`, CPU only) and the **device-resident** engine
+(`dtensor.hpp`, `dtrain_coco_yolox`/`dnetx_test`).
+
+| # | build | flags | conv/GEMM | use |
+|---|-------|-------|-----------|-----|
+| 1 | **full-scratch CPU** | *(none)* | hand-written loops | learning / reference oracle |
+| 2 | **CPU + Eigen** | `-DUSE_EIGEN -Ipure/third_party/eigen_flat` + `/arch:AVX2` (cl) or `-march=native` (g++) | Eigen blocked+SIMD | fast CPU training (~6–12× the gemm) |
+| 3 | **GPU Thrust** | `nvcc -DUSE_CUDA` (`+ -DUSE_CUBLAS -lcublas`) | Thrust kernels / cuBLAS | from-scratch GPU training |
+| 4 | **GPU cuDNN** | `nvcc -DUSE_CUDA -DUSE_CUDNN -lcudnn` (`+ -DUSE_CUBLAS`) | cuDNN direct/Winograd (grouped/depthwise via `cudnnSetConvolutionGroupCount`) | fastest GPU training |
+| – | *(debug)* **Thrust-CPU** | `-DTHRUST_DEVICE_SYSTEM=THRUST_DEVICE_SYSTEM_CPP` (no `USE_CUDA`) | device engine on CPU | verify device code with **no GPU** |
+
+`USE_EIGEN` is CPU-only opt-in (vendored flat Eigen at `pure/third_party/eigen_flat/`, entry
+`Eigen_Core.h`); `USE_CUDNN` is GPU-only and swaps the whole conv (fwd + bwd, incl. YOLOX's
+depthwise convs) for cuDNN (`CROSS_CORRELATION`, matches im2col; fp32, may relax to ~1e-2 with a
+TF32 algo). All flags are independent add-ons — the default (no flags) is the from-scratch engine.
+
+## Build (engine self-test, no deps)
+```sh
+g++ -std=c++20 -O2 -fopenmp pure/gradcheck2.cpp -o gc2 && ./gc2   # incl. Focus
+```
