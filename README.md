@@ -10,6 +10,17 @@ Reference model = the pipeline's `model_128x128_..._relu.onnx` (Keras/TF): a dep
 ResNet, 128 ch, that takes a 128×128 plate crop and emits **9 softmax heads** via two branches.
 Full spec: [pure/ref/ARCH.md](pure/ref/ARCH.md).
 
+## Browser demo (WebAssembly) — recognize a plate from your webcam
+`wasm/` is a client-side app: aim the camera at a plate, fit it in the guide box, and it shows the
+decoded **地域名・分類番号・ひらがな・一連番号**. The pure-C++ classifier compiled to WASM; the tracked
+`pure/ref/weights.bin` (1.3 MB) is fetched at runtime — no server, no upload, no Emscripten needed:
+```sh
+python -m http.server 8000        # from the repo root
+# open http://localhost:8000/wasm/  (camera needs localhost or HTTPS)
+```
+Prebuilt `wasm/lpr.js` + `wasm/lpr.wasm` are committed; node argmax matches the ONNX reference.
+Detection isn't included — fill the guide box with the plate (YOLOX auto-crop is the sibling repo).
+
 ## Status — inference parity WORKING ✅
 - **forward** (`net_lpr.hpp`): reproduces the ONNX — `pure/m1_lpr.cpp` = worst **3.3e-05** vs
   onnxruntime, argmax **9/9** on all heads.
