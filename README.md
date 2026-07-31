@@ -49,6 +49,10 @@ cl /std:c++20 /O2 /EHsc /Zc:preprocessor /DNOMINMAX /Ipure\third_party pure\trai
 train_lpr 50 8 3e-4                                  # synthetic: steps batch lr
 train_lpr 2000 16 3e-4 --data mydata --save ckpt.bin # REAL folder dataset -> checkpoint
 ```
+**CPU speedup:** add `-DUSE_EIGEN -Ipure/third_party/eigen_flat -arch:AVX2` — conv/matmul route through
+the `bk::` seam, **~2× faster** training, same result. **Inference on a real crop** (image → plate
+string, pure C++, no Python): `lpr_infer <weights_dir> <plate.jpg>` (built with `/utf-8`) — e.g. a
+pipeline crop reads `品川 371 ら 100`.
 
 ### Real-data training (`lpr_data.hpp`)
 Point `--data <dir>` at a folder with plate crops + a `labels.txt` (one line per image):
