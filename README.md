@@ -36,7 +36,7 @@ m1_lpr pure/ref/                                     # -> worst 3.3e-05, argmax 
 ## Training (pure C++)
 `train_lpr.cpp` trains all 9 heads with summed softmax cross-entropy (Adam). Validated on synthetic
 plate samples (random 9-head labels + a label-encoding image): overfitting a small set drives loss
-**56.7 → ~21** and per-head accuracy up, confirming forward + 9-head-CE + backward + optimizer.
+**56.7 → 6.9** and per-head accuracy **5.6% → 80.6%**, confirming forward + 9-head-CE + backward + optimizer.
 ```sh
 cl /std:c++20 /O2 /EHsc /Zc:preprocessor /DNOMINMAX /Ipure\third_party pure\train_lpr.cpp
 train_lpr 50 8 4 3e-4 pure/ref/      # steps samples batch lr
