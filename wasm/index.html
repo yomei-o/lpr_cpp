@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ナンバープレート認識 (WASM)</title>
+<style>
+  :root { color-scheme: light dark; --bg:#0f1220; --card:#1a1f36; --fg:#e8ecff; --mut:#98a2c8; --acc:#6ea8fe; --ok:#3ddc84; }
+  * { box-sizing:border-box; } body { margin:0; font:15px/1.5 system-ui,sans-serif; background:var(--bg); color:var(--fg); }
+  .wrap { max-width:760px; margin:0 auto; padding:20px; }
+  h1 { font-size:20px; margin:0 0 4px; } .sub { color:var(--mut); font-size:13px; margin:0 0 14px; }
+  #status { font-size:13px; color:var(--mut); margin-bottom:10px; }
+  .camwrap { position:relative; width:100%; aspect-ratio:4/3; background:#000; border-radius:12px; overflow:hidden; }
+  video { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+  .guide { position:absolute; left:15%; top:38%; width:70%; height:24%; border:2px solid var(--acc); border-radius:6px; box-shadow:0 0 0 100vmax rgba(0,0,0,.35); pointer-events:none; }
+  .row { display:flex; gap:8px; align-items:center; margin-top:12px; flex-wrap:wrap; }
+  button { font:inherit; border:0; border-radius:8px; padding:10px 16px; background:var(--acc); color:#08122b; font-weight:700; cursor:pointer; }
+  button.ghost { background:#2a3157; color:var(--fg); } button:disabled{opacity:.5;cursor:default;}
+  .plate { margin-top:14px; background:#eef3ff; color:#0b1020; border-radius:10px; padding:14px 18px; text-align:center; box-shadow:inset 0 0 0 3px #2f6f2f; }
+  .plate .region { font-size:20px; font-weight:700; } .plate .class { font-size:16px; color:#333; }
+  .plate .big { font-size:44px; font-weight:800; letter-spacing:2px; }
+  .plate .hira { font-size:22px; } .mut { color:var(--mut); font-size:12px; }
+  label input[type=checkbox]{ vertical-align:middle; }
+  code { background:#10142a; padding:1px 5px; border-radius:4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ナンバープレート認識 · WebAssembly</h1>
+  <p class="sub">govtech traffic-count の LPR 分類器を純C++→WASM 化。プレートを枠に合わせて認識。
+     すべてブラウザ内処理で、画像はどこにも送信されません。</p>
+  <div id="status">モデル読み込み中…</div>
+  <div class="camwrap"><video id="cam" autoplay playsinline muted></video><div class="guide"></div></div>
+  <div class="row">
+    <button id="startCam" class="ghost">カメラ開始</button>
+    <button id="rec" disabled>認識</button>
+    <label class="mut"><input type="checkbox" id="live"> 連続認識</label>
+  </div>
+  <div id="result"></div>
+  <p class="mut" style="margin-top:14px"><code>http://localhost</code> か HTTPS で開いてください（カメラは secure context 必須）。
+     枠にプレートを正面から大きく合わせると精度が上がります。検出(YOLOX)は別リポジトリ、ここは分類のみ。</p>
+</div>
+
+<canvas id="crop" width="128" height="128" hidden></canvas>
+<script src="lpr.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const statusEl = $('status'), resultEl = $('result');
+let M = null, ready = false, stream = null, liveTimer = null;
+const crop = $('crop'), cctx = crop.getContext('2d', { willReadFrequently: true });
+
+// ---- label tables (from Classificator/lpr/lpr.py) ----
+const REGION = ['札幌','函館','旭川','室蘭','苫小牧','釧路','知床','帯広','北見','青森','弘前','八戸','岩手','盛岡','平泉','宮城','仙台','秋田','山形','庄内','福島','会津','郡山','白河','いわき','水戸','土浦','つくば','宇都宮','那須','とちぎ','群馬','前橋','高崎','大宮','川口','所沢','川越','熊谷','春日部','越谷','千葉','成田','習志野','市川','船橋','袖ヶ浦','市原','野田','柏','松戸','品川','世田谷','練馬','杉並','板橋','足立','江東','葛飾','八王子','多摩','横浜','川崎','湘南','相模','山梨','富士山','新潟','長岡','上越','長野','松本','諏訪','富山','石川','金沢','福井','岐阜','飛騨','静岡','浜松','沼津','伊豆','名古屋','豊橋','三河','岡崎','豊田','尾張小牧','一宮','春日井','三重','鈴鹿','四日市','伊勢志摩','滋賀','京都','なにわ','大阪','和泉','堺','奈良','飛鳥','和歌山','神戸','姫路','鳥取','島根','出雲','岡山','倉敷','広島','福山','山口','下関','徳島','香川','高松','愛媛','高知','福岡','北九州','久留米','筑豊','佐賀','長崎','佐世保','熊本','大分','宮崎','鹿児島','奄美','沖縄'];
+const HIRA = [...'あいうえかきくけこさすそせたちつてとなにぬねのはひふほまみむめもやゆよらりるれろわをABCEHKLMTYV'];
+const CN01 = [...'0123456789'], CN02 = [...'0123456789ACFHKLMPXY'], CN03 = [...'0123456789ACFHKLMPXY '];
+
+// heads order: [region, class_num_01, class_num_02, class_num_03, hiragana, plate_num_01..04]
+function decode(o) {
+  const region = REGION[o[0]] ?? '?';
+  let cls = ''; if (o[1] < CN01.length) cls += CN01[o[1]]; if (o[2] < CN02.length) cls += CN02[o[2]]; if (o[3] < CN03.length) cls += CN03[o[3]];
+  const hira = HIRA[o[4]] ?? '?';
+  let num = ''; for (const v of [o[5], o[6], o[7], o[8]]) if (v !== 10) num += String(v);
+  return { region, cls: cls.trim(), hira, num };
+}
+
+async function loadWeights(m) {
+  const base = '../pure/ref/';
+  const man = await (await fetch(base + 'manifest.txt')).text();
+  const w = new Uint8Array(await (await fetch(base + 'weights.bin')).arrayBuffer());
+  try { m.FS.mkdir('/lpr'); } catch (e) {}
+  m.FS.writeFile('/lpr/manifest.txt', man); m.FS.writeFile('/lpr/weights.bin', w);
+  m._fn_ready();
+}
+createLPR().then(async m => { M = m; statusEl.textContent = '重み読み込み中…'; await loadWeights(m);
+  ready = true; statusEl.textContent = 'モデル準備完了。カメラを開始してください。'; sync();
+}).catch(e => statusEl.textContent = '読み込み失敗: ' + e);
+
+$('startCam').onclick = async () => {
+  try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    $('cam').srcObject = stream; statusEl.textContent = 'カメラ ON。枠にプレートを合わせて「認識」。'; sync();
+  } catch (e) { statusEl.textContent = 'カメラエラー: ' + e.message; }
+};
+function sync() { $('rec').disabled = !(ready && stream); }
+
+function recognize() {
+  const v = $('cam'); const vw = v.videoWidth, vh = v.videoHeight;
+  const gx = 0.15 * vw, gy = 0.38 * vh, gw = 0.70 * vw, gh = 0.24 * vh;   // guide box -> 128x128
+  cctx.drawImage(v, gx, gy, gw, gh, 0, 0, 128, 128);
+  const data = cctx.getImageData(0, 0, 128, 128).data;
+  const ptr = M._malloc(data.length); M.HEAPU8.set(data, ptr);
+  const outPtr = M._fn_recognize(ptr);
+  const o = []; for (let i = 0; i < 9; i++) o.push(M.HEAP32[(outPtr >> 2) + i]);
+  M._free(ptr);
+  const d = decode(o);
+  resultEl.innerHTML = `<div class="plate"><div class="region">${d.region} <span class="class">${d.cls}</span></div>
+    <div class="big"><span class="hira">${d.hira}</span> &nbsp; ${d.num || '----'}</div></div>`;
+}
+$('rec').onclick = recognize;
+$('live').onchange = e => { if (e.target.checked) liveTimer = setInterval(() => { if (ready && stream) recognize(); }, 500);
+  else clearInterval(liveTimer); };
+</script>
+</body>
+</html>
