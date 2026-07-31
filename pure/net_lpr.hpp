@@ -51,27 +51,30 @@ inline Tensor l_branch(Tensor x, LProv& p, bool tr, int nblocks) {
   x = l_cbr(x, p, tr);                                 // final 1x1
   return gap(x);
 }
-// head: softmax(feat[N,128] @ W[128,C] + b)
-inline Tensor l_head(const Tensor& feat, LProv& p) {
-  auto& H = p.next(); return softmax_rows(add_rowvec(matmul(feat, H.w), H.b));
+// head: feat[N,128] @ W[128,C] + b, optionally softmax (inference/parity uses softmax; training
+// wants raw logits for a numerically-stable log-softmax cross-entropy).
+inline Tensor l_head(const Tensor& feat, LProv& p, bool sm) {
+  auto& H = p.next(); Tensor logit = add_rowvec(matmul(feat, H.w), H.b);
+  return sm ? softmax_rows(logit) : logit;
 }
 
 struct LprOut { std::vector<Tensor> heads; };   // region, class_num_01/02/03, hiragana, plate_num_01..04
 
-inline LprOut lpr_forward(Tensor x, LProv& p, bool tr) {
+inline LprOut lpr_forward(Tensor x, LProv& p, bool tr, bool sm = true) {
   p.i = 0;
   Tensor s = l_cbr(x, p, tr);                          // shared stem (Conv4x4/s4 -> ReLU -> BN)
   Tensor fa = l_branch(s, p, tr, 6);                   // branch A
   LprOut o;
-  o.heads.push_back(l_head(fa, p));                    // region_id
-  o.heads.push_back(l_head(fa, p));                    // class_num_01
-  o.heads.push_back(l_head(fa, p));                    // class_num_02
-  o.heads.push_back(l_head(fa, p));                    // class_num_03
+  for (int i = 0; i < 4; ++i) o.heads.push_back(l_head(fa, p, sm));   // region, class_num_01/02/03
   Tensor fb = l_branch(s, p, tr, 5);                   // branch B (same stem output)
-  o.heads.push_back(l_head(fb, p));                    // hiragana_id
-  o.heads.push_back(l_head(fb, p));                    // plate_num_01
-  o.heads.push_back(l_head(fb, p));                    // plate_num_02
-  o.heads.push_back(l_head(fb, p));                    // plate_num_03
-  o.heads.push_back(l_head(fb, p));                    // plate_num_04
+  for (int i = 0; i < 5; ++i) o.heads.push_back(l_head(fb, p, sm));   // hiragana, plate_num_01..04
   return o;
+}
+
+// trainable parameters (conv w/b, BN affine, head w/b) for the optimizer.
+inline std::vector<Tensor> lpr_params(LProv& p) {
+  std::vector<Tensor> ps;
+  for (auto& L : p.L) { if (L.w) ps.push_back(L.w); if (L.b) ps.push_back(L.b);
+    if (L.gamma) ps.push_back(L.gamma); if (L.beta) ps.push_back(L.beta); }
+  return ps;
 }
