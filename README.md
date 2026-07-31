@@ -10,8 +10,13 @@ Reference model = the pipeline's `model_128x128_..._relu.onnx` (Keras/TF): a dep
 ResNet, 128 ch, that takes a 128×128 plate crop and emits **9 softmax heads** via two branches.
 Full spec: [pure/ref/ARCH.md](pure/ref/ARCH.md).
 
-## Browser demo (WebAssembly) — recognize a plate from your webcam
-**▶ Live demo: https://yomei-o.github.io/lpr_cpp/wasm/** (GitHub Pages, HTTPS → camera works)
+## Browser demos (WebAssembly)
+**▶ End-to-end (detect + recognize): https://yomei-o.github.io/lpr_cpp/wasm/plate.html** — camera →
+YOLOX finds the plate → crop → LPR reads it. Two chained WASM modules (`yolox.wasm` detect +
+`lpr.wasm` classify); detection runs the 83-layer ReLU yolox-tiny single-threaded (~seconds/frame,
+so it's on button-press). Detector (`yolox/`) is parity-verified vs onnxruntime (worst 1.4e-05).
+
+**▶ Classifier only (fit the plate in the box): https://yomei-o.github.io/lpr_cpp/wasm/** (GitHub Pages, HTTPS → camera works)
 
 `wasm/` is a client-side app: aim the camera at a plate, fit it in the guide box, and it shows the
 decoded **地域名・分類番号・ひらがな・一連番号**. The pure-C++ classifier compiled to WASM; the tracked
