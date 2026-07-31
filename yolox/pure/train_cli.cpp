@@ -18,8 +18,6 @@
 #include <algorithm>
 #include <random>
 
-static const int64_t NC = 80;
-
 int main(int argc, char** argv) {
   setvbuf(stdout, nullptr, _IONBF, 0);   // unbuffered so per-epoch progress shows when redirected
   std::string trainL = argc>1?argv[1]:"pure/ref/data_synth/list.txt";
@@ -28,7 +26,9 @@ int main(int argc, char** argv) {
   std::string initpt = argc>5?argv[5]:"";
   int imgsz = argc>6?atoi(argv[6]):0;                 // >0 => standard-YOLO dataset (dir/list + normalised labels)
   bool mosaic = argc>7?atoi(argv[7])!=0:(imgsz>0);    // mosaic on by default in YOLO mode
-  const std::string DU = "pure/ref/data_unf/";
+  const int64_t NC = argc>8?atoi(argv[8]):80;         // #classes (plate detector = 8: car..person,plate)
+  const std::string DU = argc>9?argv[9]:"pure/ref/data_unf/";   // init/manifest dir (nc-matched head)
+  printf("classes NC=%lld  init=%s\n", (long long)NC, DU.c_str());
 
   Dataset tr, va;
   if (imgsz>0) { tr = read_yolo_dataset(trainL, imgsz); va = read_yolo_dataset(valL, imgsz); }
