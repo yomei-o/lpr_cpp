@@ -16,6 +16,9 @@ YOLOX finds the plate → crop → LPR reads it. Two chained WASM modules (`yolo
 `lpr.wasm` classify); detection runs the 83-layer ReLU yolox-tiny single-threaded (~seconds/frame,
 so it's on button-press). Detector (`yolox/`) is parity-verified vs onnxruntime (worst 1.4e-05).
 
+The detect+recognize page also takes a **photo file** instead of the camera, and saves the
+annotated result (or the raw frame) as PNG — handy for reporting a case that does not work.
+
 **▶ Classifier only (fit the plate in the box): https://yomei-o.github.io/lpr_cpp/wasm/** (GitHub Pages, HTTPS → camera works)
 
 `wasm/` is a client-side app: aim the camera at a plate, fit it in the guide box, and it shows the
@@ -65,6 +68,36 @@ zero expected boxes, which passes whether or not the detector works. `wasm/test_
 also feeds real photos and asserts the box lands on the plate, that the score is decisive
 rather than pinned at the threshold, and that there is no scatter. Fixtures:
 `python wasm/make_fixtures.py`.
+
+## Known limits of the shipped detector (measured 2026-08-03)
+
+The detector is the govtech pipeline's traffic-camera model, and it inherits that training
+distribution. Two limits are worth knowing before blaming the port, both measured on one photo
+with only the relevant variable changed:
+
+**Plate size.** Sweeping the plate's share of the frame (same photo, tighter crops re-rendered
+to 640x480):
+
+| plate width @416 | 21 px | 33 px | 50 px | 75 px | 104 px+ |
+|---|---|---|---|---|---|
+| score | 0.57 | **0.88** | 0.83 | 0.15 | **none** |
+
+So the useful band is roughly **5–12% of the frame width** — i.e. aim so the *whole car* is in
+shot. Filling the frame with the plate (which is what the classifier-only demo asks for) makes
+the detector see nothing at all, and zooming the frame back out does not rescue it: the model
+wants the vehicle context, not just a plate at the right scale.
+
+**Plate colour.** Same photo, same geometry, only the plate recoloured:
+
+| | 白 (private) | 黄 (kei private) | **黒 (kei commercial)** |
+|---|---|---|---|
+| score | 0.85 | 0.40 | **0.21** |
+
+Black-on-yellow 黒ナンバー scores about a quarter of a white plate. With the old default
+threshold of 0.30 they simply never appeared — reported as "detects nothing". The default is
+now **0.15**, and a zero result draws the best sub-threshold candidate with its score, so the
+slider setting is visible rather than guessed. Fixing the bias properly means retraining with
+黒/黄 plates represented (`yolox/PLATE_TRAINING.md`).
 
 ## Status — inference parity WORKING ✅
 - **forward** (`net_lpr.hpp`): reproduces the ONNX — `pure/m1_lpr.cpp` = worst **3.3e-05** vs
