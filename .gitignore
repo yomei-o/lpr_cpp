@@ -16,3 +16,4 @@ scratch/
 
 # detector test fixtures (other people's photos; fetch with wasm/make_fixtures.py)
 wasm/testdata/
+*.rgba
