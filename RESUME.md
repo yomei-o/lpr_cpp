@@ -99,9 +99,27 @@ Ordered by how much they hurt. Nothing here blocks the demo; all of it is qualit
 6. **`wasm/test_lpr_box.js` needs a hand-made `.rgba`.** It should take a PNG directly (the C++ side
    already links stb_image; the JS side does not). Low priority, but it is why the test is not in
    any CI-shaped script.
-7. **Detector WASM is 3.3 s/frame single-threaded** — button-press only, no live video. pthreads +
-   SharedArrayBuffer would need COOP/COEP headers, which GitHub Pages cannot set. Would need a
-   different host, so: probably never.
+7. **Detector WASM is 3.3 s/frame single-threaded** — button-press only, no live video.
+   - Emscripten `-pthread` needs a shared `WebAssembly.Memory`, i.e. a **SharedArrayBuffer**, which
+     since Spectre is only handed to a **cross-origin isolated** document: `Cross-Origin-Opener-
+     Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp` on the *response*. GitHub
+     Pages can set no headers at all, and these two do not work as `<meta http-equiv>`.
+   - **But that does not make it impossible.** A service worker can intercept its own scope's
+     fetches and add the headers itself (`coi-serviceworker`); the page reloads once, then
+     `crossOriginIsolated` is true. It works on Pages. Costs: an extra reload on first visit, a
+     single-thread fallback for browsers with no service worker, and `require-corp` applying to
+     every subresource — harmless here, since every fetch is same-origin and relative.
+   - **The reason not to bother is the payoff, not the headers.** Threads give ~2.5–3× on this
+     workload, so 3.3 s → ~1.2 s: still a button press, still nowhere near the ~100 ms live video
+     needs. Cheaper things to do first, none of which need any header:
+     (a) run the detector **in a plain Worker** — no speedup, but 3.3 s of frozen UI becomes 3.3 s
+     of responsive page; best effort-to-comfort ratio here;
+     (b) **yolox-nano instead of tiny** — 1.08 vs 6.45 GFLOPs @416, ~6×, and §2's retraining is
+     where that choice gets made anyway — the single biggest lever;
+     (c) 416 → 320 / 256 input (1.7× / 2.6×), accuracy for speed, preview pass only;
+     (d) `-mrelaxed-simd` for FMA, ~10–30% on the GEMM, needs a second build for older browsers;
+     (e) **measure the GEMM blocking** — `-msimd128` is on but nobody has checked the tile widths
+     against wasm's 16 SIMD registers. Profile before optimising, as always.
 
 ## Notes / gotchas
 - **Two engines**: `pure/` (LPR, facenet-derived, has dtensor GPU) and `yolox/` (detector, own engine)
