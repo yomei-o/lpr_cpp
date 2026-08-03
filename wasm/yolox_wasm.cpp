@@ -35,7 +35,8 @@ EMSCRIPTEN_KEEPALIVE int fn_detect(unsigned char* rgba, int w, int h, int conf10
   const char* HN[3] = {"/head/Concat_output_0", "/head/Concat_1_output_0", "/head/Concat_2_output_0"};
   auto vals = run_onnx(*g_graph, x, {HN[0], HN[1], HN[2]});
   std::vector<Tensor> raw = {vals.at(HN[0]), vals.at(HN[1]), vals.at(HN[2])};
-  auto dets = yolox_detect(raw, {8, 16, 32}, 8, conf100 / 100.f, 0.45f);
+  // logits=false: this head came from the ONNX, which already sigmoided obj and cls.
+  auto dets = yolox_detect(raw, {8, 16, 32}, 8, conf100 / 100.f, 0.45f, /*logits=*/false);
   int n = 0;
   for (auto& d : dets) { if (d.cls != 7 || n >= 64) continue;                  // class 7 = plate
     g_boxes[n * 5 + 0] = d.x1 / scale; g_boxes[n * 5 + 1] = d.y1 / scale;

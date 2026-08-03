@@ -28,6 +28,44 @@ python -m http.server 8000        # from the repo root
 Prebuilt `wasm/lpr.js` + `wasm/lpr.wasm` are committed; node argmax matches the ONNX reference.
 Detection isn't included — fill the guide box with the plate (YOLOX auto-crop is the sibling repo).
 
+## Fixed 2026-08-03: the detector was double-sigmoiding the ONNX head 🐛
+
+Plate detection returned a scatter of boxes across the whole frame, all at nearly the same
+score, on every real image. Cause: **two sources of head tensors in this repo disagree about
+whether the sigmoid has been applied, and the ONNX path was sigmoided twice.**
+
+- the pure C++ net (`yolox_forward`) emits **raw logits** — `net_yolox.hpp` builds cls/reg/obj
+  as plain convolutions;
+- the **ONNX** does not. Megvii's `YOLOXHead.forward` in eval mode concatenates
+  `[reg_output, obj_output.sigmoid(), cls_output.sigmoid()]`, so `/head/Concat_*_output_0`
+  already carries probabilities. Confirmed on the shipped model: the Concat's inputs are
+  `Conv, Sigmoid, Sigmoid`.
+
+`yolox_detect` sigmoided unconditionally, which squashed the ONNX path into `[0.5, 0.73]`:
+
+```
+obj  : min 0.5000  max 0.6833  mean 0.5007         <- sigmoid(0) = 0.5
+class          max p   mean p
+car           0.7052   0.5174
+plate         0.6809   0.5171                      <- every class ~0.5, argmax is noise
+argmax class counts: car=1232 ... plate=958        <- out of 3549 cells
+```
+
+It never crashed and the forward stayed parity-verified at 1.4e-05 — parity covers the
+network, not the decode. `yolox_detect` now takes `logits`, and the two ONNX-fed callers
+(`m_plate_detect.cpp`, `wasm/yolox_wasm.cpp`) pass `false`. After:
+
+```
+jp1 (960x720) -> 1 plate  (683,402)-(784,477)  score 0.832
+jp2 (960x640) -> 1 plate  (250,407)-(337,465)  score 0.818
+```
+
+**The test that let this through only checked the negative case** — a flat grey frame with
+zero expected boxes, which passes whether or not the detector works. `wasm/test_yolox.js` now
+also feeds real photos and asserts the box lands on the plate, that the score is decisive
+rather than pinned at the threshold, and that there is no scatter. Fixtures:
+`python wasm/make_fixtures.py`.
+
 ## Status — inference parity WORKING ✅
 - **forward** (`net_lpr.hpp`): reproduces the ONNX — `pure/m1_lpr.cpp` = worst **3.3e-05** vs
   onnxruntime, argmax **9/9** on all heads.

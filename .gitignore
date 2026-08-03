@@ -13,3 +13,6 @@ scratch/
 
 # plate detector model (needed for the demo)
 !yolox/plate_yolox_tiny.onnx
+
+# detector test fixtures (other people's photos; fetch with wasm/make_fixtures.py)
+wasm/testdata/
