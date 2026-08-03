@@ -37,6 +37,7 @@
   </div>
   <div class="row">
     <label class="mut">conf <input id="conf" type="range" min="0.05" max="0.7" step="0.01" value="0.15"><span id="cv">0.15</span></label>
+    <button id="manual" class="ghost" disabled>枠を手で指定</button>
     <button id="saveAnn" class="ghost" disabled>注釈つきで保存</button>
     <button id="saveRaw" class="ghost" disabled>元画像を保存</button>
   </div>
@@ -47,6 +48,10 @@
      ── この検出器は交通カメラ映像で学習されており、得意域はプレート幅が画面の 5〜12% あたりです。
      また<b>黒ナンバー（黒地に黄文字）はスコアが低く出ます</b>：同じ写真で色だけ変えた実測で
      白 0.85 / 黄 0.40 / <b>黒 0.21</b>。0 件のときは下に出る「最高スコア」を見て conf を下げてください。</p>
+  <p class="mut"><b>手に持ったプレート</b>は検出器が見つけられません（大きすぎる・車がない・黒地の三重苦）。
+     その場合は<b>「枠を手で指定」</b>でプレートを囲んでください ── 検出器を飛ばして認識器に直接渡します。
+     認識は<b>6 通りの切り出しで読んで確率を合計</b>します（地域名は数%の切り出しの差で 奄美/横浜/練馬 と
+     揺れるため）。カードの「一致度 地域」が低いときは、その地域名は当てになりません。</p>
 </div>
 
 <canvas id="frame" hidden></canvas><canvas id="crop" width="128" height="128" hidden></canvas>
@@ -83,7 +88,21 @@ Promise.all([
 $('startCam').onclick = async () => { try { stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});
   $('cam').srcObject=stream; statusEl.textContent='カメラ ON。プレートを写して「検出＆認識」。'; sync(); }
   catch(e){ statusEl.textContent='カメラエラー: '+e.message; } };
-function sync(){ $('rec').disabled = !(ready && (stream || haveFrame)); }
+function sync(){ $('rec').disabled = !(ready && (stream || haveFrame));
+                 $('manual').disabled = !(ready && (stream || haveFrame)); }
+
+// Grab a still out of the live camera. Both the detect path and the manual-box path need one:
+// you cannot draw a box on a moving picture and then read pixels from a different moment.
+function freeze() {
+  const v = $('cam');
+  if (stream && v.videoWidth) {
+    frame.width = v.videoWidth; frame.height = v.videoHeight;
+    fctx.drawImage(v, 0, 0, frame.width, frame.height);
+    ov.width = frame.width; ov.height = frame.height;
+    haveFrame = true; srcName = 'camera';
+  }
+  return haveFrame;
+}
 
 $('pick').onclick = () => $('file').click();
 $('file').onchange = e => {
@@ -97,7 +116,7 @@ $('file').onchange = e => {
     octx.clearRect(0, 0, ov.width, ov.height);
     octx.drawImage(img, 0, 0);              // the <video> is empty now, so show the still here
     haveFrame = true; srcName = f.name.replace(/\.[^.]+$/, '');
-    lastBoxes = []; $('plates').innerHTML = '';
+    lastBoxes = []; manualBox = null; setManual(false); $('plates').innerHTML = '';
     $('saveRaw').disabled = false; $('saveAnn').disabled = true;
     statusEl.textContent = `写真 ${frame.width}x${frame.height} を読み込みました。「検出＆認識」。`;
     sync();
@@ -124,24 +143,100 @@ $('conf').oninput = () => {
   if (haveFrame && lastBoxes.length !== undefined) render();
 };
 
-function recognizeCrop(x1,y1,x2,y2) {                       // crop frame box -> 128x128 -> lpr -> decode
-  const w=Math.max(1,x2-x1), h=Math.max(1,y2-y1);
-  cctx.drawImage(frame, x1,y1,w,h, 0,0,128,128);
-  const data=cctx.getImageData(0,0,128,128).data;
-  const ptr=LP._malloc(data.length); LP.HEAPU8.set(data,ptr);
-  const outPtr=LP._fn_recognize(ptr); const o=[]; for(let i=0;i<9;i++) o.push(LP.HEAP32[(outPtr>>2)+i]); LP._free(ptr);
-  return decode(o);
+// Read a box out of the FULL frame with multi-crop TTA. The single-crop path is still there
+// (fn_recognize) but the 地域名 head flips with a few percent of crop margin -- on a real
+// photo the same plate read 奄美 / 横浜 / 練馬 depending on the framing. Six crops fix it, and
+// the region's agreement score says when it is still unsure.
+function plateCard(d, note) {
+  // The region head's agreement is the number worth showing: 1.00 means every crop read the
+  // same 地域名, 0.4 means the crops disagreed and the reading is a guess. The other heads are
+  // near-always 1.00, so they go in the small print.
+  const r = d.conf ? d.conf[0] : 1, weak = r < 0.6;
+  const rest = d.conf ? d.conf.slice(1).map(v => v.toFixed(2)).join(' ') : '';
+  return `<div class="plate"${weak ? ' style="box-shadow:inset 0 0 0 3px #b07a1e"' : ''}>` +
+         `<div class="region">${d.region}${weak ? ' <span style="font-size:12px;color:#8a5a00">(不確か)</span>' : ''}` +
+         ` <span style="color:#333">${d.cls}</span>` +
+         `<span style="float:right;font-size:12px;color:#555">${note}</span></div>` +
+         `<div class="big">${d.hira} ${d.num || '----'}</div>` +
+         (d.conf ? `<div style="font-size:11px;color:#556">一致度 地域 ${r.toFixed(2)} / 他 ${rest}</div>` : '') +
+         `</div>`;
+}
+
+function recognizeBox(x1, y1, x2, y2) {
+  const W = frame.width, H = frame.height;
+  const data = fctx.getImageData(0, 0, W, H).data;
+  const ptr = LP._malloc(data.length); LP.HEAPU8.set(data, ptr);
+  const outPtr = LP._fn_recognize_box(ptr, W, H, x1, y1, x2, y2);
+  const o = []; for (let i = 0; i < 9; i++) o.push(LP.HEAP32[(outPtr >> 2) + i]);
+  const cp = LP._fn_conf() >> 2;
+  const conf = []; for (let i = 0; i < 9; i++) conf.push(LP.HEAPF32[cp + i]);
+  LP._free(ptr);
+  const d = decode(o);
+  d.conf = conf;
+  return d;
+}
+
+// ---- manual box ------------------------------------------------------------------------
+// The detector is trained on traffic-camera footage: it wants a plate that is 5-12% of the
+// frame width, on a vehicle, and it scores black plates about a quarter of what it gives a
+// white one. A plate held up to a webcam fails all three at once and simply cannot be found
+// (measured: best candidate 0.02, in the wrong place, even at a 0.005 floor). Drawing the box
+// by hand skips the detector entirely and hands the crop straight to the classifier -- which
+// reads that same photo correctly. This is the intended path for a hand-held plate, not a
+// workaround for a bug.
+let manualMode = false, manualBox = null, drag = null;
+
+// The canvas is laid out with object-fit:cover, so the displayed image is scaled by the LARGER
+// ratio and the overflow is cropped evenly on both sides. Undo exactly that to get frame pixels.
+function toFrame(ev) {
+  const r = ov.getBoundingClientRect();
+  const s = Math.max(r.width / ov.width, r.height / ov.height);
+  return [(ev.clientX - r.left - (r.width - ov.width * s) / 2) / s,
+          (ev.clientY - r.top - (r.height - ov.height * s) / 2) / s];
+}
+
+function setManual(on) {
+  if (on) {
+    if (!freeze()) { statusEl.textContent = 'カメラを開始するか写真を読み込んでください'; return; }
+    octx.clearRect(0, 0, ov.width, ov.height); octx.drawImage(frame, 0, 0);   // draw on what we read
+  }
+  manualMode = on;
+  ov.style.pointerEvents = on ? 'auto' : 'none';
+  ov.style.cursor = on ? 'crosshair' : '';
+  $('manual').textContent = on ? '手動枠をやめる' : (manualBox ? '枠を引き直す' : '枠を手で指定');
+  statusEl.textContent = on ? 'プレートを囲むようにドラッグしてください（枠は少し余裕をもって）。'
+                            : statusEl.textContent;
+}
+$('manual').onclick = () => { if (manualMode) { manualBox = null; setManual(false); render(); } else setManual(true); };
+
+ov.addEventListener('pointerdown', ev => {
+  if (!manualMode) return;
+  ov.setPointerCapture(ev.pointerId);
+  const [x, y] = toFrame(ev); drag = [x, y, x, y];
+});
+ov.addEventListener('pointermove', ev => {
+  if (!drag) return;
+  const [x, y] = toFrame(ev); drag[2] = x; drag[3] = y; drawManual();
+});
+ov.addEventListener('pointerup', () => {
+  if (!drag) return;
+  const [ax, ay, bx, by] = drag; drag = null;
+  const box = [Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)];
+  if (box[2] - box[0] < 16 || box[3] - box[1] < 8) { drawManual(); return; }   // stray tap
+  manualBox = box; setManual(false); render();
+});
+
+function drawManual() {
+  const b = drag || manualBox; if (!b) return;
+  octx.clearRect(0, 0, ov.width, ov.height);
+  octx.drawImage(frame, 0, 0);                    // always the frozen still, never the live video
+  octx.strokeStyle = '#6ea8fe'; octx.lineWidth = Math.max(2, ov.width / 300);
+  octx.strokeRect(Math.min(b[0], b[2]), Math.min(b[1], b[3]), Math.abs(b[2] - b[0]), Math.abs(b[3] - b[1]));
 }
 
 $('rec').onclick = () => {
-  const v = $('cam');
-  if (stream && v.videoWidth) {                             // live camera: freeze a still first
-    frame.width = v.videoWidth; frame.height = v.videoHeight;
-    fctx.drawImage(v, 0, 0, frame.width, frame.height);
-    ov.width = frame.width; ov.height = frame.height;
-    haveFrame = true; srcName = 'camera';
-  }
-  if (!haveFrame) { statusEl.textContent = 'カメラを開始するか写真を読み込んでください'; return; }
+  manualBox = null; setManual(false);                       // detecting supersedes a hand-drawn box
+  if (!freeze()) { statusEl.textContent = 'カメラを開始するか写真を読み込んでください'; return; }
   const W = frame.width, H = frame.height;
   octx.clearRect(0, 0, W, H);
   if (!stream) octx.drawImage(frame, 0, 0);                 // keep the still visible while we work
@@ -170,19 +265,33 @@ $('rec').onclick = () => {
 function render() {
   const W = frame.width, H = frame.height, thr = parseFloat($('conf').value);
   octx.clearRect(0, 0, W, H);
-  if (!stream) octx.drawImage(frame, 0, 0);
-  const keep = lastBoxes.filter(b => b[4] >= thr);
-
-  octx.strokeStyle = '#3ddc84'; octx.lineWidth = Math.max(2, W / 300);
-  octx.font = `${Math.round(W / 40)}px sans-serif`; octx.fillStyle = '#3ddc84';
+  if (!stream || manualBox) octx.drawImage(frame, 0, 0);
+  octx.font = `${Math.round(W / 40)}px sans-serif`;
   const out = [];
+
+  // A hand-drawn box means "read here" -- it replaces the detector rather than adding to it.
+  if (manualBox) {
+    const [x1, y1, x2, y2] = manualBox;
+    const d = recognizeBox(x1, y1, x2, y2);
+    octx.strokeStyle = '#6ea8fe'; octx.lineWidth = Math.max(2, W / 300);
+    octx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    octx.fillStyle = '#6ea8fe';
+    octx.fillText(`${d.region} ${d.hira} ${d.num}`, x1, Math.max(12, y1 - 4));
+    out.push(plateCard(d, '手動枠'));
+    $('plates').innerHTML = out.join('');
+    $('saveAnn').disabled = false;
+    statusEl.textContent = '手動枠で認識しました。ずれていたら引き直してください。';
+    return;
+  }
+
+  const keep = lastBoxes.filter(b => b[4] >= thr);
+  octx.strokeStyle = '#3ddc84'; octx.lineWidth = Math.max(2, W / 300);
+  octx.fillStyle = '#3ddc84';
   for (const [x1, y1, x2, y2, sc] of keep) {
-    const d = recognizeCrop(x1|0, y1|0, x2|0, y2|0);
+    const d = recognizeBox(x1, y1, x2, y2);
     octx.strokeRect(x1, y1, x2 - x1, y2 - y1);
     octx.fillText(`${d.region} ${d.hira} ${d.num}  ${sc.toFixed(2)}`, x1, Math.max(12, y1 - 4));
-    out.push(`<div class="plate"><div class="region">${d.region} <span style="color:#333">${d.cls}</span>` +
-             `<span style="float:right;font-size:12px;color:#555">score ${sc.toFixed(3)}</span></div>` +
-             `<div class="big">${d.hira} ${d.num || '----'}</div></div>`);
+    out.push(plateCard(d, `score ${sc.toFixed(3)}`));
   }
 
   if (!out.length) {
@@ -197,10 +306,12 @@ function render() {
       octx.fillText(`best ${best[4].toFixed(2)}`, best[0], Math.max(12, best[1] - 4));
       out.push(`<span class="mut">しきい値 ${thr.toFixed(2)} を超える検出はありません。` +
                `<b>最高スコア ${best[4].toFixed(3)}</b>（橙の破線）── conf をそこまで下げれば出ます。` +
-               `黒ナンバーは 0.2 前後になりがちです。</span>`);
+               `黒ナンバーは 0.2 前後になりがちです。それでも出なければ<b>「枠を手で指定」</b>。</span>`);
     } else {
       out.push(`<span class="mut">候補ゼロ。プレートが<b>大きすぎる</b>可能性が高いです ── ` +
-               `<b>車全体が入るくらい</b>まで引いてみてください（得意域はプレート幅が画面の 5〜12%）。</span>`);
+               `<b>車全体が入るくらい</b>まで引いてみてください（得意域はプレート幅が画面の 5〜12%）。` +
+               `手に持ったプレートは検出器が原理的に苦手なので、<b>「枠を手で指定」</b>で囲んでください` +
+               `── 認識器のほうは問題なく読めます。</span>`);
     }
   }
   $('plates').innerHTML = out.join('');

@@ -31,6 +31,40 @@ nvcc compiles), classifier training loop + real-data loader, detector training l
    `weights.bin` + plate onnx, so train/infer/WASM need no Python (only one-time extraction scripts do).
 10. ✅ **`lpr_infer`** — pure-C++ classifier inference on a real crop (image → 品川 371 ら 100), `/utf-8`.
 
+## What the detector can and cannot do (measured 2026-08-03, don't re-derive this)
+The shipped detector is trained on traffic-camera footage. Three things each cost it a lot, and a
+hand-held plate in front of a webcam hits all three at once:
+
+| condition | best score on the same photo |
+|---|---|
+| plate ≈ 5–12% of frame width, on a vehicle, white | **0.85** |
+| same, yellow plate | 0.40 |
+| same, **black plate (黒地に黄文字)** | **0.21** |
+| plate ~46% of the frame, hand-held, no vehicle | **0.02, and in the wrong place** (floor 0.005) |
+
+So "0 detections" on a hand-held black plate is the detector working as trained, not a bug. The fix
+is not a lower threshold — it is **`plate.html`'s 「枠を手で指定」**: drag a box, skip the detector,
+hand the crop straight to the classifier, which reads that same photo correctly. Retraining on
+close-up / black plates is the real fix (§4).
+
+## Classifier: the region head needs multi-crop (pure/lpr_tta.hpp)
+地域名 is 133 classes decided by a few small glyphs, and it **flips with a few percent of crop
+margin** — the same real photo read 奄美 / 横浜 / 練馬 depending on framing. `recognize_tta()` reads
+6 margins (−6%…+10%) and **sums the per-head probabilities**; the summed winner's share is reported
+as an agreement score, so a shaky region can be shown as shaky instead of asserted:
+
+    single crop:  奄美 480 り 4567
+    TTA:          横浜 480 り 4567    region 0.62  class 1.00/1.00/1.00  hira 0.98  num 1.00/1.00/1.00/0.98
+
+**Do not softmax the heads again.** `net_lpr.hpp` already applies `softmax_rows` at inference and
+each head sums to exactly 1.0; softmaxing a second time squashed the 133-class head to 0.01 against
+a uniform 0.0076 and the vote became noise. `accumulate_probs()` asserts the sum ≈ 1 to keep that
+from coming back. Same class of bug as the detector's double sigmoid.
+
+- Native: `lpr_infer <weights_dir> <frame.png> --box x0 y0 x1 y1` (add `--single` for one crop).
+- WASM: `fn_recognize_box(rgba, W, H, x0,y0,x1,y1)` + `fn_conf()`; checked by
+  `node wasm/test_lpr_box.js <frame.rgba> <w> <h> <box…>` — it reproduced the native reading exactly.
+
 ## Notes / gotchas
 - **Two engines**: `pure/` (LPR, facenet-derived, has dtensor GPU) and `yolox/` (detector, own engine)
   have clashing global symbols → cannot co-link → the end-to-end demo is **two WASM modules**.
