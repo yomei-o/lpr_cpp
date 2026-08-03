@@ -65,6 +65,44 @@ from coming back. Same class of bug as the detector's double sigmoid.
 - WASM: `fn_recognize_box(rgba, W, H, x0,y0,x1,y1)` + `fn_conf()`; checked by
   `node wasm/test_lpr_box.js <frame.rgba> <w> <h> <box…>` — it reproduced the native reading exactly.
 
+## ⏭ 既知の問題 — 直っていない。暇なときに (as of 2026-08-03)
+Ordered by how much they hurt. Nothing here blocks the demo; all of it is quality.
+
+1. **The shipped detector weights are the weak link, not the code.** Everything in the table above
+   is a property of `yolox/plate_yolox_tiny.onnx`. The classifier reads what the detector misses,
+   so effort spent on detection code is wasted — the weights are what need replacing.
+   - Tried and **rejected**: RGB-inverting the frame so a black plate looks white. Measured on the
+     real photo — original best 0.015, **inverted 0 candidates**. Colour is not the dominant factor.
+   - The tell: the runner-up box on the real photo, (313,203)-(387,247) at 0.011, sits *inside* the
+     plate and is 74 px wide against the true 296 px — almost exactly ¼. The model carries a scale
+     prior from traffic-camera framing and will not stretch to a close-up.
+   - Not yet tried: a **scale pyramid** at inference (run 2–4× upscaled tiles, union the boxes).
+     ~30 min of work, but given 0.015 there is no evidence it would catch anything, and it costs
+     2–4× the runtime. Measure before building it.
+2. **Synthetic plate generator — the actual fix, and the biggest single win available.** Render JP
+   plates (白/黄/黒/緑, correct 地域名 / 分類番号 / ひらがな / 4桁 layout) and paste them onto
+   backgrounds at random scale, rotation and lighting. That yields **detector boxes and the
+   classifier's 9 labels at once, unlimited, already labelled** — and lets close-ups and black
+   plates be over-sampled, which is exactly what is failing. Both training loops already exist
+   (§4, §5); the generator is the only missing piece. Pure C++ with an embedded font keeps the
+   repo Python-free. Est. a day.
+3. **地域名 is still only 0.62 agreement even with 6-crop TTA** (see above). TTA papers over it; it
+   does not fix it. The head is under-trained on small glyphs. Retraining on §2's data with a
+   larger input crop for the top strip, or a separate higher-resolution region head, is the fix.
+   Until then: trust `conf[0]`, and treat < 0.6 as "unknown region", not as a reading.
+4. **`plate.html` recomputes nothing when the slider moves — except the classifier.** Every
+   re-filter re-runs TTA (6 forwards ≈ 0.7 s) on each surviving box. Cache by box, keyed on the
+   rounded coordinates.
+5. **The manual box has no handles.** It can only be redrawn, not nudged — annoying when the crop
+   is 5 px off and the region flips. Corner drag handles would help more than they look like they
+   would, given §3.
+6. **`wasm/test_lpr_box.js` needs a hand-made `.rgba`.** It should take a PNG directly (the C++ side
+   already links stb_image; the JS side does not). Low priority, but it is why the test is not in
+   any CI-shaped script.
+7. **Detector WASM is 3.3 s/frame single-threaded** — button-press only, no live video. pthreads +
+   SharedArrayBuffer would need COOP/COEP headers, which GitHub Pages cannot set. Would need a
+   different host, so: probably never.
+
 ## Notes / gotchas
 - **Two engines**: `pure/` (LPR, facenet-derived, has dtensor GPU) and `yolox/` (detector, own engine)
   have clashing global symbols → cannot co-link → the end-to-end demo is **two WASM modules**.
