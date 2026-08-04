@@ -7,8 +7,16 @@
 The images are not committed — they are other people's photographs, and the repo should not
 redistribute them. They are downloaded from Wikimedia Commons on demand instead:
 
-  jp1  "ERA Mini Turbo rear.JPG"     — a clear rear-view plate, filling ~1.5% of the frame
-  jp2  "TokyuBus H1283 rear.jpg"     — a Japanese bus plate, smaller and lower contrast
+  jp1  "ERA Mini Turbo rear.JPG"     — a clear rear-view plate, filling ~1.5% of the frame.
+                                      DETECTION ONLY: the plate is a New Zealand one
+                                      (CHRISTCHURCH, HZF440), so the Japanese classifier returns
+                                      nonsense on it (山口 200 あ 2540, region agreement 0.28).
+                                      The detector finds it fine at 0.832, which is all this
+                                      fixture is for.
+  jp2  "TokyuBus H1283 rear.jpg"     — a Japanese bus plate, smaller and lower contrast.
+                                      Ground truth 横浜 200 か 35-91, and the full pipeline gets
+                                      it exactly right, so this one is also the demo's built-in
+                                      sample — see wasm/sample/ (committed, with attribution).
 
 Both are Commons-hosted under their own licences; see the file pages for author and terms.
 They are used here only as local test input.
