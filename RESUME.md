@@ -1,5 +1,14 @@
 # RESUME — lpr_cpp remaining work
 
+> **2026-11-09: 重みを削除しました。** このリポジトリに入っていた govtech パイプライン由来の重み
+> （認識器 `pure/ref/weights.bin` とパリティ参照 `input.bin` / `refout.bin`、検出器 `yolox/plate_yolox_tiny.onnx`
+> とその参照 `yolox/ref_plate/`）は、git の履歴ごと削除しました。残っているのはエンジン（forward / 学習 / WASM）のコードと、
+> 構造の記述 `pure/ref/manifest.txt` / `ARCH.md` です。動かすには自分の重みを用意してください
+> （`train_lpr --data ... --save` で学習、または `export_lpr.py` で自分の ONNX から書き出す）。
+> 下のブラウザデモは重みが無いので動きません。ランダム初期化から学習した重みで動く版は
+> [yolo_lpr_cpp](https://github.com/yomei-o/yolo_lpr_cpp) と [lpr_analyzer_cpp](https://github.com/yomei-o/lpr_analyzer_cpp) にあります。
+> 以下の数値（parity 3.3e-05 など）は、削除前の重みで測った記録です。
+
 Japanese license-plate system = **detection (yolox/)** + **classification (pure/)**. Done so far:
 forward parity (classifier 3.3e-05, detector 1.4e-05), classifier GPU (dnet_lpr, CPU-thrust 9/9 +
 nvcc compiles), classifier training loop + real-data loader, detector training loop (NC=8), and the

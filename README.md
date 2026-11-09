@@ -6,6 +6,15 @@ no Python at run time. Plate **detection** is YOLOX (already ported in
 [yolox_cpp](https://github.com/yomei-o/yolox_cpp)); this repo is the per-plate **classifier** that
 reads the 地域名・分類番号・ひらがな・一連番号.
 
+> **2026-11-09: 重みを削除しました。** このリポジトリに入っていた govtech パイプライン由来の重み
+> （認識器 `pure/ref/weights.bin` とパリティ参照 `input.bin` / `refout.bin`、検出器 `yolox/plate_yolox_tiny.onnx`
+> とその参照 `yolox/ref_plate/`）は、git の履歴ごと削除しました。残っているのはエンジン（forward / 学習 / WASM）のコードと、
+> 構造の記述 `pure/ref/manifest.txt` / `ARCH.md` です。動かすには自分の重みを用意してください
+> （`train_lpr --data ... --save` で学習、または `export_lpr.py` で自分の ONNX から書き出す）。
+> 下のブラウザデモは重みが無いので動きません。ランダム初期化から学習した重みで動く版は
+> [yolo_lpr_cpp](https://github.com/yomei-o/yolo_lpr_cpp) と [lpr_analyzer_cpp](https://github.com/yomei-o/lpr_analyzer_cpp) にあります。
+> 以下の数値（parity 3.3e-05 など）は、削除前の重みで測った記録です。
+
 Reference model = the pipeline's `model_128x128_..._relu.onnx` (Keras/TF): a depthwise-separable
 ResNet, 128 ch, that takes a 128×128 plate crop and emits **9 softmax heads** via two branches.
 Full spec: [pure/ref/ARCH.md](pure/ref/ARCH.md).
