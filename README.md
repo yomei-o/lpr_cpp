@@ -14,7 +14,7 @@ reads the 地域名・分類番号・ひらがな・一連番号.
 >   `pure/ref/convert_scratch.py` で変換したもの。構造は同じで、地名 head を 138→133（先頭 133 件は同じ並び）に切り、
 >   `plate_kind` / `legible` の 2 head を捨てた。`manifest.txt` は以前とバイト一致。
 >   parity: C++ forward vs onnxruntime **worst 3.3e-06、argmax 9/9**、WASM も 9/9 一致。
->   精度は 4 桁が強く地名が弱い（実写 hold-out で 4 桁 98-99%・地名 88-93%。同梱のバス写真は `習志野 300 う 3591`、正解は 横浜 200 か 3591）。
+>   精度は 4 桁が強く地名が弱い（実写 hold-out で 4 桁 98-99%・地名 88-93%。同梱のバス写真は `横浜 200 か 3591` で全文正解）。
 > - **検出器**: 代わりが無いので、検出 + 認識のデモ（`wasm/plate.html`）は止まっている。COCO 版 yolox-tiny（Megvii、Apache-2.0）
 >   の `yolox/pure/ref/data_unf_plate/` から学習し直す予定。
 >
