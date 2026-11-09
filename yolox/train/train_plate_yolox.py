@@ -270,6 +270,9 @@ def main():
     ap.add_argument("--max-val", type=int, default=1500)
     ap.add_argument("--out", default="runs/plate")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--resume", default="", help="checkpoint saved by this script (EMA weights); continue from it")
+    ap.add_argument("--start-epoch", dest="start_epoch", type=int, default=0,
+                    help="epochs already done (with --resume); the lr schedule and no-aug phase continue from here")
     a = ap.parse_args()
     random.seed(a.seed); np.random.seed(a.seed); torch.manual_seed(a.seed)
     os.makedirs(a.out, exist_ok=True)
@@ -289,7 +292,11 @@ def main():
         vals[os.path.basename(os.path.normpath(d))] = it
         print(f"val {d}: {len(it)} images", flush=True)
 
-    model = build_model(a.yolox_src, a.init).to(dev)
+    model = build_model(a.yolox_src, "" if a.resume else a.init).to(dev)
+    if a.resume:
+        ck = torch.load(a.resume, map_location="cpu", weights_only=False)
+        model.load_state_dict(ck["model"])
+        print(f"resumed weights from {a.resume} (epoch {ck.get('epoch')}); continuing at epoch {a.start_epoch + 1}", flush=True)
     from yolox.utils import ModelEMA
     pg_bn, pg_w, pg_b = [], [], []
     for k, v in model.named_modules():
@@ -309,12 +316,17 @@ def main():
     ds = PlateSet(items, aug=True)
     log = open(os.path.join(a.out, "log.csv"), "a")
     best = -1.0
+    if a.resume and os.path.exists(os.path.join(a.out, "best.pth")):
+        bv = torch.load(os.path.join(a.out, "best.pth"), map_location="cpu", weights_only=False).get("val", {})
+        rw = [v[0] for k, v in bv.items() if "oi" in k or "real" in k]
+        best = float(np.mean(rw)) if rw else -1.0
+        print(f"best so far {best:.3f}", flush=True)
     it_per_epoch = math.ceil(len(ds) / a.batch)
     total = a.epochs * it_per_epoch
     warm = a.warmup_epochs * it_per_epoch
-    step = 0
+    step = a.start_epoch * it_per_epoch
     model.train()
-    for ep in range(a.epochs):
+    for ep in range(a.start_epoch, a.epochs):
         no_aug = ep >= a.epochs - a.no_aug_epochs
         if no_aug:
             ds.mosaic_p = 0.0
