@@ -1,7 +1,7 @@
-# Japanese LPR classifier — architecture (extracted from the ONNX via export_lpr.py)
+# Japanese LPR classifier — architecture
 
-Origin: `model_128x128_128_6700_5_4_1_relu.onnx` (Keras/TF → ONNX) from the govtech traffic-count
-pipeline `Classificator/lpr`. A depthwise-separable ResNet, all **128 channels**, BN **eps 1e-3**,
+The layout of the previous model this repo was first built around (a Keras/TF → ONNX export; its weights
+are no longer part of this repo). A depthwise-separable ResNet, all **128 channels**, BN **eps 1e-3**,
 conv order **Conv → ReLU → BN** (ReLU *before* BN). Input `[N,128,128,3]` NHWC (the C++ works in
 NCHW `[N,3,128,128]`). 27 Conv + 27 BatchNorm + 9 Dense/Softmax heads, ~1.26 MB weights.
 
@@ -27,7 +27,7 @@ Branch A = block0 + 6 blocks + final (14 convs); Branch B = block0 + 5 blocks + 
 + shared stem (1 conv) = 27 convs.
 
 ### Heads
-Each head is `softmax(feat @ W[128,C] + b)`. Label lists (from `Classificator/lpr/lpr.py`): region =
+Each head is `softmax(feat @ W[128,C] + b)`. Label lists: region =
 133 Japanese place names; hiragana = 53 chars (`あいう…` + `ABCEHKLMTYV`); class_num digits; plate_num
 digits (value 10 = blank). The decode joins them into the plate string (地域名・分類番号・ひらがな・一連番号).
 

@@ -1,12 +1,13 @@
 # lpr_cpp — pure C++ Japanese license-plate classifier (no PyTorch/TF, no CMake) — WIP
 
-The license-plate **recognition** stage of the govtech traffic-count pipeline
-(`Classificator/lpr`), ported to a dependency-free C++ autograd engine — **training and inference**,
-no Python at run time. Plate **detection** is YOLOX (already ported in
+A Japanese license-plate **recognizer** (a 9-head depthwise-separable ResNet classifier) on a
+dependency-free C++ autograd engine — **training and inference**, no Python at run time. The network
+layout follows the previous model this repo was first built around (see [pure/ref/ARCH.md](pure/ref/ARCH.md));
+the weights shipped now are our own, trained from random initialisation. Plate **detection** is YOLOX (already ported in
 [yolox_cpp](https://github.com/yomei-o/yolox_cpp)); this repo is the per-plate **classifier** that
 reads the 地域名・分類番号・ひらがな・一連番号.
 
-> **2026-11-09: 重みを入れ替えました。** 以前の重みは govtech パイプライン由来だったので、git の履歴ごと削除しました
+> **2026-11-09: 重みを入れ替えました。** 以前のモデルの重みは、git の履歴ごと削除しました
 > （認識器 `pure/ref/weights.bin` とパリティ参照、検出器 `yolox/plate_yolox_tiny.onnx` と `yolox/ref_plate/`）。
 >
 > - **認識器**: いまの `pure/ref/weights.bin` は、[yolo_lpr_cpp](https://github.com/yomei-o/yolo_lpr_cpp) の
@@ -86,9 +87,9 @@ also feeds real photos and asserts the box lands on the plate, that the score is
 rather than pinned at the threshold, and that there is no scatter. Fixtures:
 `python wasm/make_fixtures.py`.
 
-## Known limits of the previous (govtech, removed) detector (measured 2026-08-03)
+## Known limits of the previous (removed) detector (measured 2026-08-03)
 
-The detector is the govtech pipeline's traffic-camera model, and it inherits that training
+The previous detector was a traffic-camera model, and it inherited that training
 distribution. Two limits are worth knowing before blaming the port, both measured on one photo
 with only the relevant variable changed:
 
@@ -148,7 +149,7 @@ Point `--data <dir>` at a folder with plate crops + a `labels.txt` (one line per
 <filename> <region> <class_num_01> <class_num_02> <class_num_03> <hiragana> <plate_num_01..04>
 plate0001.jpg  51 5 0 0 9 1 2 3 4        # indices (0-based) into each head's class list
 ```
-Images are bilinear-resized to 128×128, RGB, /255 (matching `Classificator/lpr/lpr.py`). To make
+Images are bilinear-resized to 128×128, RGB, /255 (matching the previous model's preprocessing). To make
 `labels.txt` from human annotations (`filename ⟶ 品川 ⟶ 500 ⟶ あ ⟶ 1234`, tab-separated), use
 `pure/ref/make_labels.py`. Training saves a checkpoint (`--save`); copy `pure/ref/manifest.txt` next
 to it and it reloads for inference / the WASM demo. Real JP-plate data is private, so this repo ships

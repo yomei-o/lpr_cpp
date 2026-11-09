@@ -1,6 +1,6 @@
 // Real-data loader for LPR training: a folder with plate crops + a labels.txt mapping each image to
 // its 9 head labels (indices). Images are bilinear-resized to 128×128, RGB, /255, NCHW — matching the
-// pipeline's preprocessing (Classificator/lpr/lpr.py: resize, RGB, /255). Requires
+// previous model's preprocessing (resize, RGB, /255). Requires
 // STB_IMAGE_IMPLEMENTATION in the including .cpp.
 //
 // labels.txt format (one line per sample; '#' comments allowed):

@@ -1,4 +1,4 @@
-// Label tables + decode for the 9 LPR heads (from Classificator/lpr/lpr.py). Turns the 9 argmax
+// Label tables + decode for the 9 LPR heads. Turns the 9 argmax
 // indices into the plate string: 地域名 分類番号 ひらがな 一連番号.
 #pragma once
 #include <string>

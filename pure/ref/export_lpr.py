@@ -12,8 +12,8 @@
 import sys, os, numpy as np, onnx, onnxruntime as ort
 from onnx import numpy_helper
 
-MP = sys.argv[1] if len(sys.argv) > 1 else \
-  r"C:/prog/govtech-traffic-count-pipeline-main/Classificator/lpr/model/R5_01_LPR_30000_10000/model_128x128_128_6700_5_4_1_relu.onnx"
+if len(sys.argv) < 2: sys.exit("usage: python export_lpr.py <model.onnx>")
+MP = sys.argv[1]
 OUT = os.path.dirname(__file__)
 m = onnx.load(MP); g = m.graph
 init = {i.name: numpy_helper.to_array(i) for i in g.initializer}

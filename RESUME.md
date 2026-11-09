@@ -1,6 +1,6 @@
 # RESUME — lpr_cpp remaining work
 
-> **2026-11-09: 重みを入れ替えました。** 以前の重みは govtech パイプライン由来だったので、git の履歴ごと削除しました
+> **2026-11-09: 重みを入れ替えました。** 以前のモデルの重みは、git の履歴ごと削除しました
 > （認識器 `pure/ref/weights.bin` とパリティ参照、検出器 `yolox/plate_yolox_tiny.onnx` と `yolox/ref_plate/`）。
 >
 > - **認識器**: いまの `pure/ref/weights.bin` は、[yolo_lpr_cpp](https://github.com/yomei-o/yolo_lpr_cpp) の

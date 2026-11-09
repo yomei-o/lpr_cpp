@@ -1,6 +1,6 @@
 """Train the plate DETECTOR (YOLOX-tiny, 1 class = plate) from the COCO-pretrained YOLOX-tiny.
 
-No govtech weights anywhere: the starting point is Megvii's COCO yolox_tiny.pth (Apache-2.0), with the
+The starting point is Megvii's COCO yolox_tiny.pth (Apache-2.0), with the
 classification convs replaced by fresh 1-class ones. Model and loss (SimOTA, IoU/obj/cls/L1) are
 Megvii's own code from the YOLOX repository (put its source dir on --yolox-src); the data pipeline is
 here, kept to what this task needs:
