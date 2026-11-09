@@ -11,11 +11,13 @@ reads the 地域名・分類番号・ひらがな・一連番号.
 > （認識器 `pure/ref/weights.bin` とパリティ参照、検出器 `yolox/plate_yolox_tiny.onnx` と `yolox/ref_plate/`）。
 >
 > - **認識器**: いまの `pure/ref/weights.bin` は、[yolo_lpr_cpp](https://github.com/yomei-o/yolo_lpr_cpp) の
->   `models/plate_ocr_scratch.onnx`（lpr_analyzer_cpp で**ランダム初期化から**学習、BSD-3-Clause）を
+>   `models/plate_ocr_syn1.onnx`（2026-11-10〜。公開データ＋[jp_lpr_image_cpp](https://github.com/yomei-o/jp_lpr_image_cpp)
+>   の合成だけで lpr_analyzer_cpp で学習、BSD-3-Clause。自社の実写は使っていない）を
 >   `pure/ref/convert_scratch.py` で変換したもの。構造は同じで、地名 head を 138→133（先頭 133 件は同じ並び）に切り、
->   `plate_kind` / `legible` の 2 head を捨てた。`manifest.txt` は以前とバイト一致。
->   parity: C++ forward vs onnxruntime **worst 3.3e-06、argmax 9/9**、WASM も 9/9 一致。
->   精度は 4 桁が強く地名が弱い（実写 hold-out で 4 桁 98-99%・地名 88-93%。同梱のバス写真は `横浜 200 か 3591` で全文正解）。
+>   `plate_kind` / `legible` の 2 head を捨てた。`manifest.txt` は以前と同じ。
+>   parity: C++ forward vs onnxruntime **worst 1.6e-06、argmax 9/9**、WASM も 9/9 一致。
+>   実写 hold-out で 4 桁 100%・地名 92-94%、学習に無い書体の合成で地名 87%（前の scratch は 34%）。
+>   同梱のバス写真は `横浜 200 か 3591` で全文正解。
 > - **検出器**: `yolox/plate_yolox_tiny.onnx` は COCO 版 yolox-tiny（Megvii、Apache-2.0、SiLU）から**ナンバーだけの 1 クラス**で
 >   学習し直したもの（`yolox/train/train_plate_yolox.py`、合成 16,000 ＋ Open Images 5,362 ＋ alpr_jp 実写 224 枚、RTX 3090）。
 >   50 エポック学習した中で検証がいちばん良かった 35 エポック目を採用。検証 AP50 は alpr_jp 実写 0.992・Open Images 0.897・合成 0.987。
