@@ -27,10 +27,9 @@
 <body>
 <div class="wrap">
   <h1>ナンバープレート認識 · WebAssembly</h1>
-  <p style="background:#fff3cd;color:#664d03;border:1px solid #ffecb5;padding:10px;border-radius:6px">
-    <b>このデモは停止しました（2026-11-09）。</b>同梱していた重みは govtech パイプライン由来だったので、リポジトリから削除しました。
-    ランダム初期化から学習した重みで動く版は <a href="https://yomei-o.github.io/yolo_lpr_cpp/wasm/">yolo_lpr_cpp</a> と
-    <a href="https://yomei-o.github.io/lpr_analyzer_cpp/">lpr_analyzer_cpp</a> にあります。</p>
+  <p style="background:#e7f1ff;color:#084298;border:1px solid #b6d4fe;padding:10px;border-radius:6px">
+    重みは 2026-11-09 に、ランダム初期化から学習したもの（BSD-3-Clause、<a href="https://github.com/yomei-o/yolo_lpr_cpp">yolo_lpr_cpp</a> の認識器を変換）に入れ替えました。
+    4 桁はよく読めますが、地名はまだ外すことがあります。</p>
   <p class="sub">govtech traffic-count の LPR 分類器を純C++→WASM 化。プレートを枠に合わせて認識。
      すべてブラウザ内処理で、画像はどこにも送信されません。</p>
   <div id="status">モデル読み込み中…</div>
