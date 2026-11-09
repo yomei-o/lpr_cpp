@@ -1,5 +1,5 @@
-// Pure-C++ parity for the plate detector (ReLU yolox-tiny, 8-class): run plate_yolox_tiny.onnx via
-// the graph interpreter, stopping at the 3 per-level head tensors [1,13,H,W], and compare to
+// Pure-C++ parity for the plate detector (yolox-tiny, 1-class plate; train/train_plate_yolox.py): run
+// plate_yolox_tiny.onnx via the graph interpreter, stopping at the 3 per-level head tensors [1,5+nc,H,W], and compare to
 // onnxruntime. These heads feed the standard YOLOX decode+NMS (infer_yolox.hpp) — no need to express
 // the ONNX decode tail (Reshape/Transpose/3D-Concat) in the 4D engine.
 //   build: cl /std:c++20 /O2 /EHsc /Zc:preprocessor /DNOMINMAX /Ipure\third_party pure\m_plate_parity.cpp
@@ -25,10 +25,11 @@ int main(int argc, char** argv) {
   auto vals = run_onnx(g, x, stop);
   float worst = 0;
   for (int i = 0; i < 3; ++i) {
-    Tensor y = vals.at(HN[i]); auto ref = rd(RF + "head" + std::to_string(i) + ".bin", 13 * HW[i] * HW[i]);
+    Tensor y = vals.at(HN[i]); const int64_t C = y->shape[1];
+    auto ref = rd(RF + "head" + std::to_string(i) + ".bin", C * HW[i] * HW[i]);
     float w = 0; for (int64_t j = 0; j < y->numel(); ++j) w = std::max(w, std::fabs(y->data[j] - ref[j]));
     worst = std::max(worst, w);
-    printf("  head%d [1,13,%d,%d]  worst %.3e\n", i, HW[i], HW[i], w);
+    printf("  head%d [1,%lld,%d,%d]  worst %.3e\n", i, (long long)C, HW[i], HW[i], w);
   }
   printf("plate detector (pure-C++ onnx run): worst |pure - onnxruntime| = %.3e  %s\n",
          worst, worst < 1e-3f ? "MATCH" : "MISMATCH");

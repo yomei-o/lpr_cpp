@@ -36,3 +36,20 @@ Export `best.pt` back to ONNX (megvii YOLOX export) and drop it in as `plate_yol
 it directly through the pure-C++ net. The browser demo (`../wasm/plate.html`) then detects with your
 model. Note: the shipped `plate_yolox_tiny.onnx` (the pipeline's model) is a **ReLU** variant; the
 training path here uses standard **SiLU** YOLOX — retrain fully (don't mix the ReLU weights).
+
+## 2026-11: the shipped detector (PyTorch path, `train/`)
+
+`plate_yolox_tiny.onnx` is now trained with Megvii's own YOLOX model + loss in PyTorch (faster on a GPU
+than `train_cli`), starting from COCO `yolox_tiny.pth` with a fresh **1-class** (plate) head:
+```sh
+python train/train_plate_yolox.py --yolox-src YOLOX-0.3.0 --init yolox_tiny.pth \
+    --data data/synth --data data/det_oi:2 --data data/det_real:8 \
+    --val data/det_oi_val --val data/det_real_val --val data/synth_val --epochs 50 --out runs/plate
+python train/export_plate_onnx.py --yolox-src YOLOX-0.3.0 --ckpt runs/plate/best.pth \
+    --out plate_yolox_tiny.onnx --ref ref_plate        # + C++ parity ref for pure/m_plate_parity.cpp
+```
+Data: synthetic frames from yolo_lpr_cpp's `jlpr gen-det`, Open Images V7 plates
+(lpr_analyzer_cpp `train/fetch_openimages_plates.py`), and checked alpr_jp boxes
+(`train/make_real_det.py`). The exporter rewrites the Focus slices into the form `pure/onnx_run.hpp`
+reads and checks onnxruntime gives the same output. The C++ / WASM decode reads the class count from the
+head and treats the last class as the plate, so the old 8-class layout still runs too.

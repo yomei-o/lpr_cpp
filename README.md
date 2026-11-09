@@ -15,8 +15,11 @@ reads the 地域名・分類番号・ひらがな・一連番号.
 >   `plate_kind` / `legible` の 2 head を捨てた。`manifest.txt` は以前とバイト一致。
 >   parity: C++ forward vs onnxruntime **worst 3.3e-06、argmax 9/9**、WASM も 9/9 一致。
 >   精度は 4 桁が強く地名が弱い（実写 hold-out で 4 桁 98-99%・地名 88-93%。同梱のバス写真は `横浜 200 か 3591` で全文正解）。
-> - **検出器**: 代わりが無いので、検出 + 認識のデモ（`wasm/plate.html`）は止まっている。COCO 版 yolox-tiny（Megvii、Apache-2.0）
->   の `yolox/pure/ref/data_unf_plate/` から学習し直す予定。
+> - **検出器**: `yolox/plate_yolox_tiny.onnx` は COCO 版 yolox-tiny（Megvii、Apache-2.0、SiLU）から**ナンバーだけの 1 クラス**で
+>   学習し直したもの（`yolox/train/train_plate_yolox.py`、合成 16,000 ＋ Open Images 5,362 ＋ alpr_jp 実写 224 枚、RTX 3090）。
+>   いま入っているのは学習途中（25/50 エポック）の best で、検証 AP50 は alpr_jp 実写 0.993・Open Images 0.893・合成 0.987。
+>   C++ インタプリタと onnxruntime の差 1.7e-06、`wasm/test_yolox.js` 全 PASS。C++ / WASM はクラス数を head から読む（1 クラスでも 8 クラスでも動く）。
+>   旧検出器が苦手だった近接・黒ナンバーも取れる（黒ナンバーの近接写真で 0.899、旧は 0.21／近接は検出ゼロ）。
 >
 > 以下の本文の数値（parity 3.3e-05 など）は、削除前の重みで測った記録です。
 
@@ -83,7 +86,7 @@ also feeds real photos and asserts the box lands on the plate, that the score is
 rather than pinned at the threshold, and that there is no scatter. Fixtures:
 `python wasm/make_fixtures.py`.
 
-## Known limits of the shipped detector (measured 2026-08-03)
+## Known limits of the previous (govtech, removed) detector (measured 2026-08-03)
 
 The detector is the govtech pipeline's traffic-camera model, and it inherits that training
 distribution. Two limits are worth knowing before blaming the port, both measured on one photo

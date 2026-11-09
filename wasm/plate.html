@@ -25,10 +25,9 @@
 <body>
 <div class="wrap">
   <h1>ナンバープレート 検出 + 認識 · WebAssembly</h1>
-  <p style="background:#fff3cd;color:#664d03;border:1px solid #ffecb5;padding:10px;border-radius:6px">
-    <b>このデモは停止しました（2026-11-09）。</b>検出器の重みは govtech パイプライン由来だったので削除しました（認識器は自前の重みに入れ替え済み、<a href="index.html">認識だけのデモ</a>は動きます）。検出器は学習し直す予定です。
-    ランダム初期化から学習した重みで動く版は <a href="https://yomei-o.github.io/yolo_lpr_cpp/wasm/">yolo_lpr_cpp</a> と
-    <a href="https://yomei-o.github.io/lpr_analyzer_cpp/">lpr_analyzer_cpp</a> にあります。</p>
+  <p style="background:#e7f1ff;color:#084298;border:1px solid #b6d4fe;padding:10px;border-radius:6px">
+    2026-11-09: 検出器と認識器の重みを入れ替えました。検出器は COCO 版 yolox-tiny（Megvii、Apache-2.0）からナンバーだけの 1 クラスで学習し直したもの、
+    認識器はランダム初期化から学習したもの（BSD-3-Clause）です。地名はまだ外すことがあります。</p>
   <p class="sub">YOLOX(検出)→ 切り出し → LPR分類器(認識) を純C++→WASM 2モジュールでブラウザ内連結。
      画像は送信されません。検出は 83層 yolox-tiny を単スレで走らせるため数秒かかります。
      手元にプレートの写真がなければ<b>「サンプル画像」</b>を押すだけで検出から認識まで一通り走ります

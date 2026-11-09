@@ -1,6 +1,7 @@
-// Plate DETECTOR compiled to WASM (ReLU yolox-tiny, 8-class). fn_detect takes a camera RGBA frame,
+// Plate DETECTOR compiled to WASM (yolox-tiny). fn_detect takes a camera RGBA frame,
 // YOLOX-letterboxes it to 416, runs the plate ONNX (pure-C++ graph interpreter), decodes+NMS, and
-// returns the plate boxes (class 7) in the frame's own pixel coords. Chained in the browser with the
+// returns the plate boxes in the frame's own pixel coords. The class count is read from the head
+// (5+nc channels) and the plate is the last class, so a 1-class model and an 8-class one both work. Chained in the browser with the
 // LPR classifier (lpr.wasm). The ONNX is fetched into MEMFS at /plate/model.onnx by the page.
 #include "onnx_run.hpp"
 #include "infer_yolox.hpp"
@@ -36,9 +37,10 @@ EMSCRIPTEN_KEEPALIVE int fn_detect(unsigned char* rgba, int w, int h, int conf10
   auto vals = run_onnx(*g_graph, x, {HN[0], HN[1], HN[2]});
   std::vector<Tensor> raw = {vals.at(HN[0]), vals.at(HN[1]), vals.at(HN[2])};
   // logits=false: this head came from the ONNX, which already sigmoided obj and cls.
-  auto dets = yolox_detect(raw, {8, 16, 32}, 8, conf100 / 100.f, 0.45f, /*logits=*/false);
+  const int nc = (int)raw[0]->shape[1] - 5, plate = nc - 1;
+  auto dets = yolox_detect(raw, {8, 16, 32}, nc, conf100 / 100.f, 0.45f, /*logits=*/false);
   int n = 0;
-  for (auto& d : dets) { if (d.cls != 7 || n >= 64) continue;                  // class 7 = plate
+  for (auto& d : dets) { if (d.cls != plate || n >= 64) continue;
     g_boxes[n * 5 + 0] = d.x1 / scale; g_boxes[n * 5 + 1] = d.y1 / scale;
     g_boxes[n * 5 + 2] = d.x2 / scale; g_boxes[n * 5 + 3] = d.y2 / scale; g_boxes[n * 5 + 4] = d.score; ++n; }
   return n;
