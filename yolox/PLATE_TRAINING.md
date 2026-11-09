@@ -34,8 +34,8 @@ is a standard YOLOX state_dict.
 ## 4. Use the trained detector
 Export `best.pt` back to ONNX (megvii YOLOX export) and drop it in as `plate_yolox_tiny.onnx`, or run
 it directly through the pure-C++ net. The browser demo (`../wasm/plate.html`) then detects with your
-model. Note: the shipped `plate_yolox_tiny.onnx` (the pipeline's model) is a **ReLU** variant; the
-training path here uses standard **SiLU** YOLOX — retrain fully (don't mix the ReLU weights).
+model. The shipped `plate_yolox_tiny.onnx` is a standard **SiLU** yolox-tiny retrained from the COCO
+weights as a 1-class plate detector (see the 2026-11 section below), the same architecture this path trains.
 
 ## 2026-11: the shipped detector (PyTorch path, `train/`)
 

@@ -33,8 +33,8 @@ Full spec: [pure/ref/ARCH.md](pure/ref/ARCH.md).
 ## Browser demos (WebAssembly)
 **▶ End-to-end (detect + recognize): https://yomei-o.github.io/lpr_cpp/wasm/plate.html** — camera →
 YOLOX finds the plate → crop → LPR reads it. Two chained WASM modules (`yolox.wasm` detect +
-`lpr.wasm` classify); detection runs the 83-layer ReLU yolox-tiny single-threaded (~seconds/frame,
-so it's on button-press). Detector (`yolox/`) is parity-verified vs onnxruntime (worst 1.4e-05).
+`lpr.wasm` classify); detection runs the 1-class SiLU yolox-tiny single-threaded (~seconds/frame,
+so it's on button-press). Detector (`yolox/`) is parity-verified vs onnxruntime (worst 2.1e-06).
 
 The detect+recognize page also takes a **photo file** instead of the camera, and saves the
 annotated result (or the raw frame) as PNG — handy for reporting a case that does not work.

@@ -143,8 +143,8 @@ Ordered by how much they hurt. Nothing here blocks the demo; all of it is qualit
 ## Notes / gotchas
 - **Two engines**: `pure/` (LPR, facenet-derived, has dtensor GPU) and `yolox/` (detector, own engine)
   have clashing global symbols → cannot co-link → the end-to-end demo is **two WASM modules**.
-- The shipped `yolox/plate_yolox_tiny.onnx` is a **ReLU** yolox-tiny; `train_cli` uses standard
-  **SiLU** YOLOX — retrain fully from real data, don't mix the ReLU weights.
+- The shipped `yolox/plate_yolox_tiny.onnx` is a standard **SiLU** yolox-tiny, retrained from the COCO
+  weights as a 1-class plate detector (`yolox/train/train_plate_yolox.py`) — same architecture as `train_cli`.
 - Plate = class 7 of `car,small-truck,truck,bus,motorbike,bicycle,person,plate`.
 - Live demos: https://yomei-o.github.io/lpr_cpp/wasm/plate.html (detect+recognize) and `/wasm/`
   (classifier only). nvcc build env + emsdk paths: see the facenet_cpp memory.
